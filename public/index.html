@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel · Otxaran</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Misma identidad que la web: Jost, blanco y negro, mayúsculas espaciadas */
+  :root{
+    --ink:#111111;
+    --line:#e4e4e4;
+    --paper:#ffffff;
+    --stone:#8c8a82;
+    --soft:#f7f7f5;
+    --img:#f2f2f0;
+    --muted:#666666;
+    --alert:#a3261a;
+    --alert-bg:#fbeceb;
+    --warn:#8a5d00;
+    --warn-bg:#faf2df;
+    --ok:#2f6b3a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--paper);color:var(--ink);font-family:'Jost',Arial,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased;}
+  a{color:inherit;text-decoration:none;}
+  button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit;}
+  button{cursor:pointer;background:none;border:none;}
+  [hidden]{display:none !important;}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+
+  /* ---------- cabecera ---------- */
+  header{
+    position:fixed;top:0;left:0;width:100%;z-index:100;
+    display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    padding:20px 4vw;background:rgba(255,255,255,0.96);border-bottom:1px solid var(--line);
+    font-size:12px;letter-spacing:0.08em;text-transform:uppercase;
+  }
+  header nav{display:flex;gap:26px;}
+  header nav button{opacity:0.6;letter-spacing:inherit;text-transform:inherit;font-size:inherit;transition:opacity .2s;}
+  header nav button:hover{opacity:1;}
+  header nav button.active{opacity:1;font-weight:600;}
+  .wordmark{text-align:center;line-height:1;}
+  .wordmark b{display:block;font-weight:600;font-size:20px;letter-spacing:0.12em;}
+  .wordmark span{display:block;margin-top:5px;font-size:9.5px;letter-spacing:0.32em;opacity:0.5;}
+  .estado{display:flex;justify-content:flex-end;align-items:center;gap:18px;}
+  .conexion{display:flex;align-items:center;gap:7px;opacity:0.75;white-space:nowrap;}
+  .conexion i{width:7px;height:7px;border-radius:50%;background:var(--stone);display:inline-block;}
+  .conexion.on i{background:var(--ok);}
+  .conexion.demo i{background:var(--warn);}
+  .estado a{opacity:0.6;}
+  .estado a:hover{opacity:1;}
+
+  .banner-demo{
+    margin:0 4vw 0;padding:12px 16px;border:1px solid var(--warn);background:var(--warn-bg);color:var(--warn);
+    font-size:13px;line-height:1.6;
+  }
+  main{padding:96px 4vw 120px;max-width:1440px;margin:0 auto;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---------- títulos ---------- */
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:44px 0 28px;}
+  .eyebrow{font-size:12px;letter-spacing:0.14em;text-transform:uppercase;opacity:0.55;margin-bottom:10px;}
+  h1{font-size:clamp(28px,4vw,40px);font-weight:500;letter-spacing:0.02em;}
+  h2{font-size:12px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:16px;}
+
+  /* ---------- botones ---------- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:13px 22px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+    font-size:12px;letter-spacing:0.1em;text-transform:uppercase;transition:opacity .2s;
+  }
+  .btn:hover{opacity:0.85;}
+  .btn.ghost{background:transparent;color:var(--ink);}
+  .btn:disabled{opacity:0.4;cursor:default;}
+  .link{font-size:12px;letter-spacing:0.08em;text-transform:uppercase;text-decoration:underline;text-underline-offset:4px;opacity:0.7;}
+  .link:hover{opacity:1;}
+
+  /* ---------- resumen ---------- */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .stat{padding:30px 24px;border-right:1px solid var(--line);}
+  .stat:last-child{border-right:none;}
+  .stat .num{font-size:clamp(28px,3.4vw,42px);font-weight:300;letter-spacing:0.01em;}
+  .stat .lbl{margin-top:8px;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);}
+  .stat .sub{margin-top:4px;font-size:12.5px;color:var(--stone);}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:5vw;margin-top:56px;}
+  .list{border-top:1px solid var(--line);}
+  .list-row{display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--line);width:100%;text-align:left;}
+  button.list-row:hover .name{text-decoration:underline;text-underline-offset:3px;}
+  .list-row img,.list-row .ph{width:40px;height:50px;object-fit:cover;background:var(--img);flex:none;}
+  .list-row .name{font-size:14.5px;font-weight:500;}
+  .list-row .meta{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .list-row .end{margin-left:auto;text-align:right;font-size:13px;white-space:nowrap;}
+  .empty{padding:28px 0;font-size:14px;color:var(--muted);line-height:1.7;}
+
+  /* ---------- barra de herramientas ---------- */
+  .toolbar{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-bottom:26px;}
+  .search{flex:1 1 260px;max-width:380px;border:none;border-bottom:1px solid var(--ink);padding:9px 2px;font-size:17px;background:transparent;outline:none;}
+  .search::placeholder{color:#aaa;}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{padding:7px 13px;border:1px solid var(--line);font-size:11.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);transition:all .15s;}
+  .chip:hover{border-color:var(--ink);color:var(--ink);}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper);}
+  .toggle{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);cursor:pointer;}
+  .toggle input{accent-color:var(--ink);width:15px;height:15px;}
+
+  /* ---------- tabla de stock ---------- */
+  .table-wrap{overflow-x:auto;border-top:1px solid var(--ink);}
+  table{width:100%;border-collapse:collapse;}
+  th{font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);text-align:left;padding:14px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th.size,td.size{text-align:center;width:64px;}
+  td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  td.prod{min-width:240px;}
+  .prod-cell{display:flex;align-items:center;gap:14px;text-align:left;}
+  .prod-cell img,.prod-cell .ph{width:40px;height:50px;object-fit:cover;background:var(--img);flex:none;}
+  .prod-cell .name{font-weight:500;font-size:14.5px;}
+  .prod-cell .meta{font-size:12px;color:var(--stone);margin-top:2px;letter-spacing:0.02em;}
+  td.num{font-size:13.5px;color:var(--muted);white-space:nowrap;}
+  .pill{min-width:44px;height:38px;padding:0 8px;border:1px solid var(--line);font-size:15px;font-weight:500;transition:border-color .15s;}
+  .pill:hover{border-color:var(--ink);}
+  .pill.zero{background:var(--alert-bg);border-color:transparent;color:var(--alert);}
+  .pill.low{background:var(--warn-bg);border-color:transparent;color:var(--warn);}
+  .pill.zero:hover,.pill.low:hover{border-color:currentColor;}
+  .nosize{color:#ccc;}
+  .legend{display:flex;gap:18px;margin-top:16px;font-size:12px;color:var(--muted);flex-wrap:wrap;}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;}
+  .legend .l0::before{background:var(--alert-bg);border:1px solid var(--alert);}
+  .legend .l1::before{background:var(--warn-bg);border:1px solid var(--warn);}
+
+  /* ---------- prendas (como el catálogo de la web) ---------- */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;}
+  .card{text-align:left;display:flex;flex-direction:column;background:var(--paper);}
+  .card .img{width:100%;aspect-ratio:4/5;overflow:hidden;background:var(--img);position:relative;}
+  .card .img img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease;}
+  .card:hover .img img{transform:scale(1.04);}
+  .card .info{padding:14px 4% 26px;}
+  .card .name{font-size:15px;font-weight:500;letter-spacing:0.02em;}
+  .card .price{font-size:13px;color:#777;margin-top:2px;}
+  .badge{position:absolute;top:12px;left:12px;padding:5px 9px;font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;background:var(--paper);color:var(--muted);}
+  .badge.live{background:var(--ink);color:var(--paper);}
+  .card .stockline{font-size:12px;color:var(--stone);margin-top:6px;}
+  .card .stockline.alert{color:var(--alert);}
+
+  /* ---------- ventas ---------- */
+  .canal{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;padding:4px 8px;border:1px solid var(--line);white-space:nowrap;}
+  td .lines{font-size:13px;color:var(--muted);line-height:1.6;}
+
+  /* ---------- ventana de stock ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(17,17,17,0.35);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;}
+  #stock-modal{z-index:260;}
+  .modal{background:var(--paper);width:100%;max-width:400px;padding:30px 30px 26px;}
+  .modal .ttl{font-size:19px;font-weight:500;}
+  .modal .sub{font-size:13px;color:var(--muted);margin-top:4px;}
+  .stepper{display:flex;align-items:center;justify-content:center;gap:0;margin:30px 0 10px;}
+  .stepper button{width:56px;height:56px;border:1px solid var(--ink);font-size:24px;font-weight:300;}
+  .stepper input{width:96px;height:56px;border:1px solid var(--ink);border-left:none;border-right:none;text-align:center;font-size:28px;font-weight:300;outline:none;-moz-appearance:textfield;}
+  .stepper input::-webkit-outer-spin-button,.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .note{font-size:12.5px;color:var(--muted);text-align:center;line-height:1.6;margin-bottom:22px;}
+  .modal .actions{display:flex;gap:10px;}
+  .modal .actions .btn{flex:1;}
+
+  /* ---------- panel lateral de prenda ---------- */
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,100%);background:var(--paper);z-index:210;
+    display:flex;flex-direction:column;border-left:1px solid var(--line);box-shadow:-20px 0 60px rgba(0,0,0,0.08);}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:22px 30px;border-bottom:1px solid var(--line);
+    font-size:12px;letter-spacing:0.1em;text-transform:uppercase;}
+  .drawer-head button{font-size:12px;letter-spacing:0.1em;text-transform:uppercase;opacity:0.6;}
+  .drawer-head button:hover{opacity:1;}
+  .drawer-body{flex:1;overflow-y:auto;padding:28px 30px 40px;}
+  .drawer-foot{padding:18px 30px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;}
+  .drawer-foot .btn{flex:1;}
+  .photos{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:30px;}
+  .photos img,.photos .add{width:100%;aspect-ratio:4/5;object-fit:cover;background:var(--img);}
+  .photos .add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--stone);
+    font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);cursor:pointer;text-align:center;padding:8px;}
+  .photos .add:hover{border-color:var(--ink);color:var(--ink);}
+  .photos .add b{font-size:24px;font-weight:300;}
+  .photos .pending{opacity:0.45;}
+  .field{margin-bottom:22px;}
+  .field label,.field .lbl{display:block;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+  .field input[type=text],.field input[type=number],.field select,.field textarea{
+    width:100%;border:none;border-bottom:1px solid var(--line);padding:8px 0;font-size:16px;background:transparent;outline:none;border-radius:0;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-bottom-color:var(--ink);}
+  .field textarea{min-height:170px;resize:vertical;line-height:1.7;font-size:14.5px;border:1px solid var(--line);padding:12px;}
+  .field textarea:focus{border-color:var(--ink);}
+  .field .hint{font-size:12px;color:var(--stone);margin-top:6px;line-height:1.5;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  .seg{display:flex;border:1px solid var(--ink);}
+  .seg button{flex:1;padding:11px 8px;font-size:11.5px;letter-spacing:0.08em;text-transform:uppercase;}
+  .seg button.on{background:var(--ink);color:var(--paper);}
+  .size-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;}
+  .size-in{border:1px solid var(--line);padding:8px 10px;}
+  .size-in span{display:block;font-size:11px;letter-spacing:0.1em;color:var(--muted);}
+  .size-in input{width:100%;border:none;outline:none;font-size:18px;padding-top:2px;}
+  .stock-summary{display:flex;flex-wrap:wrap;gap:6px;}
+
+  /* ---------- avisos ---------- */
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:300;background:var(--ink);color:var(--paper);
+    padding:14px 22px;font-size:13.5px;max-width:min(560px,calc(100% - 32px));line-height:1.5;box-shadow:0 10px 30px rgba(0,0,0,0.15);}
+  .toast.error{background:var(--alert);}
+  .loading{padding:80px 0;text-align:center;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);}
+
+  /* ---------- móvil ---------- */
+  .tabbar{display:none;}
+  @media (max-width:1000px){
+    .grid{grid-template-columns:repeat(3,1fr);}
+    .stats{grid-template-columns:repeat(2,1fr);}
+    .stat:nth-child(2){border-right:none;}
+    .stat:nth-child(-n+2){border-bottom:1px solid var(--line);}
+    .cols{grid-template-columns:1fr;gap:48px;}
+  }
+  @media (max-width:700px){
+    header{grid-template-columns:auto 1fr;padding:16px 16px;}
+    header nav{display:none;}
+    .wordmark{text-align:left;}
+    .estado a{display:none;}
+    main{padding:78px 16px 110px;}
+    .banner-demo{margin:0 16px;}
+    .grid{grid-template-columns:repeat(2,1fr);}
+    .stat{padding:22px 14px;}
+    .tabbar{display:flex;position:fixed;bottom:0;left:0;width:100%;z-index:150;background:var(--paper);border-top:1px solid var(--line);}
+    .tabbar button{flex:1;padding:16px 4px calc(16px + env(safe-area-inset-bottom));font-size:11px;letter-spacing:0.1em;text-transform:uppercase;opacity:0.55;}
+    .tabbar button.active{opacity:1;font-weight:600;}
+    .drawer-body,.drawer-head,.drawer-foot{padding-left:18px;padding-right:18px;}
+    .row2{grid-template-columns:1fr;gap:0;}
+    .photos{grid-template-columns:repeat(3,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <nav aria-label="Secciones">
+    <button data-view="resumen" class="active">Resumen</button>
+    <button data-view="stock">Stock</button>
+    <button data-view="prendas">Prendas</button>
+    <button data-view="ventas">Ventas</button>
+  </nav>
+  <div class="wordmark"><b>OTXARAN</b><span>Panel</span></div>
+  <div class="estado">
+    <span class="conexion" id="conexion"><i></i><span>Conectando…</span></span>
+    <a id="link-tienda" href="#" target="_blank" rel="noopener" hidden>Ver tienda</a>
+  </div>
+</header>
+
+<main>
+  <div id="loading" class="loading">Cargando prendas…</div>
+
+  <!-- RESUMEN -->
+  <section class="view" id="view-resumen">
+    <div class="page-head">
+      <div><div class="eyebrow" id="hoy"></div><h1>Resumen</h1></div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="cols">
+      <div>
+        <h2>Tallas a reponer</h2>
+        <div class="list" id="reponer"></div>
+      </div>
+      <div>
+        <h2>Últimas ventas</h2>
+        <div class="list" id="ultimas"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STOCK -->
+  <section class="view" id="view-stock">
+    <div class="page-head">
+      <div><div class="eyebrow">Por tallas · se actualiza en la web y en el TPV</div><h1>Stock</h1></div>
+    </div>
+    <div class="toolbar">
+      <input class="search" id="stock-q" type="search" placeholder="Buscar prenda o código" aria-label="Buscar prenda">
+      <div class="chips" id="stock-tipos"></div>
+      <label class="toggle"><input type="checkbox" id="stock-reponer"> Solo a reponer</label>
+    </div>
+    <div class="table-wrap"><table id="stock-table"></table></div>
+    <div class="legend"><span class="l0">Agotada</span><span class="l1">Queda 1</span><span>Toca un número para cambiarlo</span></div>
+  </section>
+
+  <!-- PRENDAS -->
+  <section class="view" id="view-prendas">
+    <div class="page-head">
+      <div><div class="eyebrow">Fotos, precios y textos de la web</div><h1>Prendas</h1></div>
+      <button class="btn" id="nueva">+ Nueva prenda</button>
+    </div>
+    <div class="toolbar">
+      <input class="search" id="prendas-q" type="search" placeholder="Buscar prenda" aria-label="Buscar prenda">
+      <div class="chips" id="prendas-estado">
+        <button class="chip on" data-estado="">Todas</button>
+        <button class="chip" data-estado="ACTIVE">En la web</button>
+        <button class="chip" data-estado="DRAFT">Borrador</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- VENTAS -->
+  <section class="view" id="view-ventas">
+    <div class="page-head">
+      <div><div class="eyebrow">Últimos 60 días · web y tienda</div><h1>Ventas</h1></div>
+    </div>
+    <div class="stats" id="ventas-stats"></div>
+    <div class="table-wrap" style="margin-top:44px"><table id="ventas-table"></table></div>
+  </section>
+</main>
+
+<div class="tabbar" aria-label="Secciones">
+  <button data-view="resumen" class="active">Resumen</button>
+  <button data-view="stock">Stock</button>
+  <button data-view="prendas">Prendas</button>
+  <button data-view="ventas">Ventas</button>
+</div>
+
+<!-- ventana de stock -->
+<div class="overlay" id="stock-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+    <div class="ttl" id="sm-title"></div>
+    <div class="sub" id="sm-sub"></div>
+    <div class="stepper">
+      <button type="button" id="sm-menos" aria-label="Una menos">−</button>
+      <input type="number" id="sm-valor" min="0" inputmode="numeric" aria-label="Unidades">
+      <button type="button" id="sm-mas" aria-label="Una más">+</button>
+    </div>
+    <p class="note">Unidades disponibles. Al guardar cambia a la vez en Shopify, la web y el TPV.</p>
+    <div class="actions">
+      <button class="btn ghost" id="sm-cancelar">Cancelar</button>
+      <button class="btn" id="sm-guardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- panel de prenda -->
+<div class="overlay" id="drawer-bg" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-labelledby="dr-title">
+  <div class="drawer-head"><span id="dr-title">Prenda</span><button id="dr-cerrar">Cerrar ✕</button></div>
+  <div class="drawer-body">
+    <div class="photos" id="dr-fotos"></div>
+    <input type="file" id="dr-file" accept="image/jpeg,image/png,image/webp" multiple class="sr">
+    <div class="field"><label for="dr-nombre">Nombre</label><input type="text" id="dr-nombre" autocomplete="off"></div>
+    <div class="row2">
+      <div class="field"><label for="dr-precio">Precio (€, IVA incluido)</label><input type="text" id="dr-precio" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="dr-tipo">Tipo</label><select id="dr-tipo"></select></div>
+    </div>
+    <div class="field"><label for="dr-marca">Marca</label><input type="text" id="dr-marca" autocomplete="off"></div>
+    <div class="field">
+      <label for="dr-desc">Descripción</label>
+      <textarea id="dr-desc"></textarea>
+      <div class="hint">Deja una línea en blanco entre párrafos. Empieza con «•» cada característica de la lista.</div>
+    </div>
+    <div class="field">
+      <span class="lbl">Estado</span>
+      <div class="seg" id="dr-estado">
+        <button type="button" data-estado="DRAFT">Borrador</button>
+        <button type="button" data-estado="ACTIVE">En la web</button>
+      </div>
+      <div class="hint" id="dr-estado-hint"></div>
+    </div>
+    <!-- solo al crear -->
+    <div id="dr-nueva-tallas" hidden>
+      <div class="field">
+        <span class="lbl">Tallas</span>
+        <div class="chips" id="dr-tallas"></div>
+        <div class="hint">Toca para elegir. ¿Otra talla? Escríbela y pulsa Enter: <input type="text" id="dr-talla-extra" style="border:none;border-bottom:1px solid var(--line);width:70px;outline:none;font-size:13px"></div>
+      </div>
+      <div class="field">
+        <span class="lbl">Unidades por talla</span>
+        <div class="size-grid" id="dr-stock-in"></div>
+      </div>
+    </div>
+    <!-- solo al editar -->
+    <div class="field" id="dr-stock-box" hidden>
+      <span class="lbl">Stock por talla</span>
+      <div class="stock-summary" id="dr-stock"></div>
+      <div class="hint">Toca una talla para cambiar las unidades.</div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <a class="link" id="dr-admin" href="#" target="_blank" rel="noopener" hidden>Abrir en Shopify</a>
+    <button class="btn" id="dr-guardar">Guardar</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+  const ORDEN_TALLAS = ["XXS","XS","S","M","L","XL","XXL","3XL","32","34","36","38","40","42","44","46","48","Única"];
+  const TALLAS_RAPIDAS = ["XS","S","M","L","XL","XXL","34","36","38","40","42","44","Única"];
+  const state = { modo: null, ctx: null, tipos: [], productos: [], ventas: null, view: "resumen",
+                  stockTipo: "", prendasEstado: "", drawer: null, pendientes: [] };
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const euro = n => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n || 0);
+  const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const ordenTalla = t => { const i = ORDEN_TALLAS.indexOf(t); return i < 0 ? 999 : i; };
+
+  // ---------- API ----------
+  async function api(ruta, opciones = {}) {
+    const r = await fetch("/api" + ruta, {
+      method: opciones.method || "GET",
+      headers: opciones.body ? { "Content-Type": "application/json" } : {},
+      body: opciones.body ? JSON.stringify(opciones.body) : undefined,
+    });
+    let datos = {};
+    try { datos = await r.json(); } catch (_) {}
+    if (!r.ok) { const e = new Error(datos.error || "No se ha podido conectar con el panel"); e.status = r.status; throw e; }
+    return datos;
+  }
+
+  let toastTimer;
+  function toast(msg, error = false) {
+    const t = $("#toast");
+    t.textContent = msg; t.classList.toggle("error", error); t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, error ? 6500 : 3800);
+  }
+  const avisoGuardado = () => state.modo === "demo"
+    ? "Guardado en el panel (modo demo: no se ha enviado a Shopify)."
+    : "Guardado. Ya está actualizado en Shopify, la web y el TPV.";
+
+  // ---------- datos derivados ----------
+  const fotoDe = p => p.fotos[0]?.url || "";
+  const precioDe = p => p.variantes[0]?.precio || 0;
+  const stockTotal = p => p.variantes.reduce((s, v) => s + v.stock, 0);
+  const skuBase = p => { const s = p.variantes[0]?.sku || ""; return (s.match(/^[A-Z]+-\d+/) || [s])[0]; };
+  const tallasDe = p => (p.opciones.find(o => o.nombre === "Talla")?.valores) || [];
+  // filas de stock: una por prenda, o una por color si la prenda tiene colores
+  function filasStock(p) {
+    const color = p.opciones.find(o => o.nombre === "Color");
+    if (!color) return [{ p, etiqueta: "", vars: p.variantes }];
+    return color.valores.map(c => ({ p, etiqueta: c, vars: p.variantes.filter(v => v.opciones.Color === c) }));
+  }
+  const canalDe = c => ({ web: "Web", pos: "Tienda (TPV)", shopify_draft_order: "Pedido manual" }[c] || (c || "—"));
+
+  // ---------- navegación ----------
+  function irA(view) {
+    state.view = view;
+    $$("[data-view]").forEach(b => b.classList.toggle("active", b.dataset.view === view));
+    $$(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
+    if (view === "ventas" && state.ventas === null) cargarVentas();
+    render();
+    window.scrollTo({ top: 0 });
+    try { localStorage.setItem("otx-panel-vista", view); } catch (_) {}
+  }
+  $$("[data-view]").forEach(b => b.addEventListener("click", () => irA(b.dataset.view)));
+
+  function render() {
+    if (!state.ctx) return;
+    ({ resumen: renderResumen, stock: renderStock, prendas: renderPrendas, ventas: renderVentas })[state.view]();
+  }
+
+  // ---------- RESUMEN ----------
+  function renderResumen() {
+    const ps = state.productos;
+    const activas = ps.filter(p => p.estado === "ACTIVE").length;
+    const unidades = ps.reduce((s, p) => s + stockTotal(p), 0);
+    const agotadas = ps.flatMap(p => p.variantes).filter(v => v.stock === 0).length;
+    const v30 = (state.ventas || []).filter(o => Date.now() - new Date(o.fecha) < 30 * 864e5);
+    $("#stats").innerHTML = [
+      [ps.length, "Prendas", `${activas} en la web · ${ps.length - activas} en borrador`],
+      [unidades, "Unidades en stock", `${ps.flatMap(p => p.variantes).length} tallas en total`],
+      [agotadas, "Tallas agotadas", "No se pueden comprar"],
+      [state.ventas === null ? "…" : euro(v30.reduce((s, o) => s + o.total, 0)), "Ventas 30 días", state.ventas === null ? "" : `${v30.length} pedidos`],
+    ].map(([n, l, s]) => `<div class="stat"><div class="num">${esc(n)}</div><div class="lbl">${esc(l)}</div><div class="sub">${esc(s)}</div></div>`).join("");
+
+    // una línea por prenda: primero las que tienen alguna talla con stock (lo urgente), luego las que no tienen nada
+    const grupos = ps.map(p => {
+      const cero = p.variantes.filter(v => v.stock === 0), uno = p.variantes.filter(v => v.stock === 1);
+      return { p, cero, uno, todo: cero.length === p.variantes.length };
+    }).filter(g => g.cero.length || g.uno.length)
+      .sort((a, b) => a.todo - b.todo || (b.cero.length + b.uno.length) - (a.cero.length + a.uno.length));
+    const filaRep = g => `
+      <button class="list-row" data-editar="${esc(g.p.id)}">
+        ${fotoDe(g.p) ? `<img src="${esc(fotoDe(g.p))}" alt="" loading="lazy">` : `<span class="ph"></span>`}
+        <span><span class="name">${esc(g.p.titulo)}</span><span class="meta" style="display:block">${g.todo ? "Sin stock en ninguna talla"
+          : [g.cero.length ? `Agotada: ${g.cero.map(v => esc(v.titulo)).join(", ")}` : "", g.uno.length ? `Queda 1: ${g.uno.map(v => esc(v.titulo)).join(", ")}` : ""].filter(Boolean).join(" · ")}</span></span>
+        <span class="end" style="color:${g.cero.length ? "var(--alert)" : "var(--warn)"}">${g.todo ? "Sin stock" : g.cero.length ? `${g.cero.length} agotada${g.cero.length > 1 ? "s" : ""}` : "Poco stock"}</span>
+      </button>`;
+    $("#reponer").innerHTML = grupos.length
+      ? grupos.slice(0, 8).map(filaRep).join("") + (grupos.length > 8 ? `<button class="list-row link" data-goto="stock">Ver las ${grupos.length} prendas en Stock</button>` : "")
+      : `<div class="empty">Todo tiene al menos 2 unidades.</div>`;
+
+    const ult = (state.ventas || []).slice(0, 6);
+    $("#ultimas").innerHTML = state.ventas === null ? `<div class="empty">Cargando ventas…</div>`
+      : ult.length ? ult.map(o => `
+        <div class="list-row">
+          <span><span class="name">${esc(o.numero)} · ${euro(o.total)}</span>
+          <span class="meta" style="display:block">${esc(new Date(o.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short" }))} · ${esc(canalDe(o.canal))} · ${o.lineas.reduce((s, l) => s + l.cantidad, 0)} art.</span></span>
+        </div>`).join("")
+      : `<div class="empty">${state.modo === "demo" ? "En modo demo no hay ventas. Al conectar Shopify aparecerán aquí las de la web y las del TPV." : "Todavía no hay ventas en los últimos 60 días."}</div>`;
+  }
+  $("#view-resumen").addEventListener("click", e => {
+    const b = e.target.closest("[data-editar]"); if (b) abrirPrenda(b.dataset.editar);
+    if (e.target.closest("[data-goto]")) { $("#stock-reponer").checked = true; irA("stock"); }
+  });
+
+  // ---------- STOCK ----------
+  function renderStock() {
+    const tipos = [...new Set(state.productos.map(p => p.tipo).filter(Boolean))];
+    $("#stock-tipos").innerHTML = ["", ...tipos].map(t => `<button class="chip ${state.stockTipo === t ? "on" : ""}" data-tipo="${esc(t)}">${esc(t || "Todo")}</button>`).join("");
+    const q = norm($("#stock-q").value), soloRep = $("#stock-reponer").checked;
+    let filas = state.productos
+      .filter(p => !state.stockTipo || p.tipo === state.stockTipo)
+      .filter(p => !q || norm(p.titulo + " " + p.variantes.map(v => v.sku).join(" ")).includes(q))
+      .flatMap(filasStock);
+    if (soloRep) filas = filas.filter(f => f.vars.some(v => v.stock <= 1));
+    const tallas = [...new Set(filas.flatMap(f => f.vars.map(v => v.opciones.Talla)).filter(Boolean))].sort((a, b) => ordenTalla(a) - ordenTalla(b));
+    if (!filas.length) { $("#stock-table").innerHTML = `<tr><td><div class="empty">No hay prendas que coincidan.</div></td></tr>`; return; }
+    $("#stock-table").innerHTML = `
+      <thead><tr><th>Prenda</th><th>Precio</th>${tallas.map(t => `<th class="size">${esc(t)}</th>`).join("")}<th class="size">Total</th></tr></thead>
+      <tbody>${filas.map(({ p, etiqueta, vars }) => `
+        <tr>
+          <td class="prod"><button class="prod-cell" data-editar="${esc(p.id)}">
+            ${fotoDe(p) ? `<img src="${esc(fotoDe(p))}" alt="" loading="lazy">` : `<span class="ph"></span>`}
+            <span><span class="name">${esc(p.titulo)}${etiqueta ? ` · ${esc(etiqueta)}` : ""}</span>
+            <span class="meta" style="display:block">${esc(skuBase(p))}${p.estado !== "ACTIVE" ? " · borrador" : ""}</span></span>
+          </button></td>
+          <td class="num">${euro(precioDe(p))}</td>
+          ${tallas.map(t => { const v = vars.find(x => x.opciones.Talla === t);
+            return `<td class="size">${v ? `<button class="pill ${v.stock === 0 ? "zero" : v.stock === 1 ? "low" : ""}" data-stock="${esc(v.item)}" aria-label="${esc(p.titulo)} ${esc(v.titulo)}: ${v.stock} unidades">${v.stock}</button>` : `<span class="nosize">—</span>`}</td>`; }).join("")}
+          <td class="size num">${vars.reduce((s, v) => s + v.stock, 0)}</td>
+        </tr>`).join("")}</tbody>`;
+  }
+  $("#stock-q").addEventListener("input", renderStock);
+  $("#stock-reponer").addEventListener("change", renderStock);
+  $("#stock-tipos").addEventListener("click", e => { const c = e.target.closest("[data-tipo]"); if (c) { state.stockTipo = c.dataset.tipo; renderStock(); } });
+  $("#stock-table").addEventListener("click", e => {
+    const s = e.target.closest("[data-stock]"); if (s) return abrirStock(s.dataset.stock);
+    const p = e.target.closest("[data-editar]"); if (p) abrirPrenda(p.dataset.editar);
+  });
+
+  // ventana de stock
+  let stockActual = null;
+  function buscarVariante(item) {
+    for (const p of state.productos) { const v = p.variantes.find(x => x.item === item); if (v) return { p, v }; }
+    return null;
+  }
+  function abrirStock(item) {
+    const r = buscarVariante(item); if (!r) return;
+    stockActual = r;
+    $("#sm-title").textContent = r.p.titulo;
+    $("#sm-sub").textContent = `${Object.entries(r.v.opciones).map(([k, v]) => `${k} ${v}`).join(" · ")} · ${r.v.sku || ""}`;
+    $("#sm-valor").value = r.v.stock;
+    $("#stock-modal").hidden = false;
+    $("#sm-valor").focus(); $("#sm-valor").select();
+  }
+  const cerrarStock = () => { $("#stock-modal").hidden = true; stockActual = null; };
+  $("#sm-menos").addEventListener("click", () => $("#sm-valor").value = Math.max(0, (parseInt($("#sm-valor").value, 10) || 0) - 1));
+  $("#sm-mas").addEventListener("click", () => $("#sm-valor").value = (parseInt($("#sm-valor").value, 10) || 0) + 1);
+  $("#sm-cancelar").addEventListener("click", cerrarStock);
+  $("#stock-modal").addEventListener("click", e => { if (e.target.id === "stock-modal") cerrarStock(); });
+  $("#sm-valor").addEventListener("keydown", e => { if (e.key === "Enter") guardarStock(); });
+  $("#sm-guardar").addEventListener("click", guardarStock);
+  async function guardarStock() {
+    if (!stockActual) return;
+    const cantidad = parseInt($("#sm-valor").value, 10);
+    if (!(cantidad >= 0)) return toast("Escribe un número de unidades (0 o más).", true);
+    const { v } = stockActual;
+    if (cantidad === v.stock) return cerrarStock();
+    $("#sm-guardar").disabled = true;
+    try {
+      await api("/stock", { method: "POST", body: { item: v.item, cantidad, anterior: v.stock } });
+      v.stock = cantidad;
+      cerrarStock(); render(); if (state.drawer) pintarStockDrawer(); toast(avisoGuardado());
+    } catch (e) {
+      toast(e.message, true);
+      if (e.status === 409) { cerrarStock(); await cargarProductos(); }
+    } finally { $("#sm-guardar").disabled = false; }
+  }
+
+  // ---------- PRENDAS ----------
+  function renderPrendas() {
+    const q = norm($("#prendas-q").value);
+    const lista = state.productos
+      .filter(p => !state.prendasEstado || p.estado === state.prendasEstado)
+      .filter(p => !q || norm(p.titulo + " " + p.tipo + " " + p.marca).includes(q));
+    $("#grid").innerHTML = lista.length ? lista.map(p => {
+      const total = stockTotal(p);
+      return `<button class="card" data-editar="${esc(p.id)}">
+        <div class="img">${fotoDe(p) ? `<img src="${esc(fotoDe(p))}" alt="${esc(p.titulo)}" loading="lazy">` : ""}
+          <span class="badge ${p.estado === "ACTIVE" ? "live" : ""}">${p.estado === "ACTIVE" ? "En la web" : p.estado === "ARCHIVED" ? "Archivada" : "Borrador"}</span></div>
+        <div class="info"><div class="name">${esc(p.titulo)}</div><div class="price">${euro(precioDe(p))}</div>
+          <div class="stockline ${total === 0 ? "alert" : ""}">${total === 0 ? "Sin stock" : `${total} unidades`} · ${p.fotos.length} foto${p.fotos.length === 1 ? "" : "s"}</div></div>
+      </button>`; }).join("") : `<div class="empty">No hay prendas que coincidan.</div>`;
+  }
+  $("#prendas-q").addEventListener("input", renderPrendas);
+  $("#prendas-estado").addEventListener("click", e => {
+    const c = e.target.closest("[data-estado]"); if (!c) return;
+    state.prendasEstado = c.dataset.estado;
+    $$("#prendas-estado .chip").forEach(x => x.classList.toggle("on", x === c)); renderPrendas();
+  });
+  $("#grid").addEventListener("click", e => { const c = e.target.closest("[data-editar]"); if (c) abrirPrenda(c.dataset.editar); });
+  $("#nueva").addEventListener("click", () => abrirPrenda(null));
+
+  // panel lateral
+  function setEstadoDrawer(estado) {
+    state.drawer.estado = estado;
+    $$("#dr-estado button").forEach(b => b.classList.toggle("on", b.dataset.estado === estado));
+    $("#dr-estado-hint").textContent = estado === "ACTIVE"
+      ? "Se ve en la web y se puede vender en la tienda online y en el TPV."
+      : "Solo la ves tú. No aparece en la web.";
+  }
+  $("#dr-estado").addEventListener("click", e => { const b = e.target.closest("[data-estado]"); if (b) setEstadoDrawer(b.dataset.estado); });
+
+  function abrirPrenda(id) {
+    const p = id ? state.productos.find(x => x.id === id) : null;
+    if (id && !p) return;
+    state.drawer = { id, estado: p ? p.estado : "DRAFT", tallas: p ? tallasDe(p) : ["S", "M", "L", "XL"], stockNuevo: {} };
+    state.pendientes = [];
+    $("#dr-title").textContent = p ? "Editar prenda" : "Nueva prenda";
+    $("#dr-tipo").innerHTML = state.tipos.map(t => `<option ${p && p.tipo === t ? "selected" : ""}>${esc(t)}</option>`).join("");
+    $("#dr-nombre").value = p ? p.titulo : "";
+    $("#dr-precio").value = p ? String(precioDe(p)).replace(".", ",") : "";
+    $("#dr-marca").value = p ? p.marca : "Otxaran";
+    $("#dr-desc").value = p ? p.descripcion : "";
+    setEstadoDrawer(state.drawer.estado);
+    $("#dr-nueva-tallas").hidden = !!p;
+    $("#dr-stock-box").hidden = !p;
+    const admin = state.ctx.admin && p ? `${state.ctx.admin}/products/${p.id.split("/").pop()}` : "";
+    $("#dr-admin").hidden = !admin; $("#dr-admin").href = admin || "#";
+    pintarFotos();
+    if (p) pintarStockDrawer(); else pintarTallasNuevas();
+    $("#drawer").hidden = false; $("#drawer-bg").hidden = false;
+    $("#dr-nombre").focus();
+  }
+  function cerrarPrenda() { $("#drawer").hidden = true; $("#drawer-bg").hidden = true; state.drawer = null; state.pendientes = []; }
+  $("#dr-cerrar").addEventListener("click", cerrarPrenda);
+  $("#drawer-bg").addEventListener("click", cerrarPrenda);
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (!$("#stock-modal").hidden) cerrarStock(); else if (state.drawer) cerrarPrenda();
+  });
+
+  function pintarFotos() {
+    const p = state.drawer.id ? state.productos.find(x => x.id === state.drawer.id) : null;
+    const actuales = p ? p.fotos.map(f => `<img src="${esc(f.url)}" alt="">`) : [];
+    const pend = state.pendientes.map(f => `<img class="pending" src="${esc(f.preview)}" alt="Pendiente de subir">`);
+    $("#dr-fotos").innerHTML = actuales.concat(pend).join("") + `<label class="add" for="dr-file"><b>+</b>Añadir fotos</label>`;
+  }
+  function pintarStockDrawer() {
+    const p = state.productos.find(x => x.id === state.drawer.id); if (!p) return;
+    $("#dr-stock").innerHTML = p.variantes.map(v => `<button class="pill ${v.stock === 0 ? "zero" : v.stock === 1 ? "low" : ""}" data-stock="${esc(v.item)}" style="padding:0 12px">${esc(v.titulo)} · ${v.stock}</button>`).join("");
+  }
+  $("#dr-stock").addEventListener("click", e => { const b = e.target.closest("[data-stock]"); if (b) abrirStock(b.dataset.stock); });
+
+  function pintarTallasNuevas() {
+    const d = state.drawer;
+    const todas = [...new Set([...TALLAS_RAPIDAS, ...d.tallas])];
+    $("#dr-tallas").innerHTML = todas.map(t => `<button type="button" class="chip ${d.tallas.includes(t) ? "on" : ""}" data-talla="${esc(t)}">${esc(t)}</button>`).join("");
+    d.tallas.sort((a, b) => ordenTalla(a) - ordenTalla(b));
+    $("#dr-stock-in").innerHTML = d.tallas.map(t => `<label class="size-in"><span>${esc(t)}</span><input type="number" min="0" inputmode="numeric" data-talla="${esc(t)}" value="${d.stockNuevo[t] ?? 0}"></label>`).join("");
+  }
+  $("#dr-tallas").addEventListener("click", e => {
+    const b = e.target.closest("[data-talla]"); if (!b) return;
+    const d = state.drawer, t = b.dataset.talla;
+    d.tallas = d.tallas.includes(t) ? d.tallas.filter(x => x !== t) : [...d.tallas, t];
+    pintarTallasNuevas();
+  });
+  $("#dr-stock-in").addEventListener("input", e => { const i = e.target.closest("[data-talla]"); if (i) state.drawer.stockNuevo[i.dataset.talla] = parseInt(i.value, 10) || 0; });
+  $("#dr-talla-extra").addEventListener("keydown", e => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const t = e.target.value.trim(); if (!t) return;
+    if (!state.drawer.tallas.includes(t)) state.drawer.tallas.push(t);
+    e.target.value = ""; pintarTallasNuevas();
+  });
+
+  // fotos: se reducen a 1600 px en el navegador antes de subirlas
+  $("#dr-file").addEventListener("change", async e => {
+    for (const file of e.target.files) {
+      try { state.pendientes.push(await prepararFoto(file)); } catch (_) { toast(`No he podido leer ${file.name}`, true); }
+    }
+    e.target.value = ""; pintarFotos();
+  });
+  function prepararFoto(file) {
+    return new Promise((ok, mal) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 1600, k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        const dataUrl = c.toDataURL("image/jpeg", 0.86);
+        URL.revokeObjectURL(url);
+        ok({ preview: dataUrl, tipo: "image/jpeg", datos: dataUrl.split(",")[1] });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); mal(); };
+      img.src = url;
+    });
+  }
+
+  function siguienteSku() {
+    const nums = state.productos.flatMap(p => p.variantes.map(v => (/^OTX-(\d+)/.exec(v.sku || "") || [])[1])).filter(Boolean).map(Number);
+    return "OTX-" + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(2, "0");
+  }
+
+  $("#dr-guardar").addEventListener("click", async () => {
+    const d = state.drawer; if (!d) return;
+    const p = d.id ? state.productos.find(x => x.id === d.id) : null;
+    const datos = {
+      titulo: $("#dr-nombre").value.trim(), precio: $("#dr-precio").value.trim(), tipo: $("#dr-tipo").value,
+      marca: $("#dr-marca").value.trim(), descripcion: $("#dr-desc").value, estado: d.estado,
+    };
+    if (!datos.titulo) return toast("Ponle un nombre a la prenda.", true);
+    if (!(parseFloat(datos.precio.replace(",", ".")) > 0)) return toast("Escribe un precio válido, por ejemplo 49,95.", true);
+    if (!p && !d.tallas.length) return toast("Elige al menos una talla.", true);
+    if (d.estado === "ACTIVE" && !(p ? p.fotos.length : 0) && !state.pendientes.length) {
+      if (!confirm("Esta prenda no tiene fotos. ¿Ponerla en la web igualmente?")) return;
+    }
+    const btn = $("#dr-guardar"); btn.disabled = true; btn.textContent = "Guardando…";
+    try {
+      let prod;
+      if (p) {
+        const cambios = {};
+        if (datos.titulo !== p.titulo) cambios.titulo = datos.titulo;
+        if (parseFloat(datos.precio.replace(",", ".")) !== precioDe(p)) cambios.precio = datos.precio;
+        if (datos.tipo !== p.tipo) cambios.tipo = datos.tipo;
+        if (datos.marca !== p.marca) cambios.marca = datos.marca;
+        if (datos.descripcion.trim() !== p.descripcion.trim()) cambios.descripcion = datos.descripcion;
+        if (datos.estado !== p.estado) cambios.estado = datos.estado;
+        prod = Object.keys(cambios).length ? (await api("/productos/" + encodeURIComponent(p.id), { method: "POST", body: cambios })).producto : p;
+      } else {
+        prod = (await api("/productos", { method: "POST", body: { ...datos, tallas: d.tallas, stock: d.stockNuevo, sku: siguienteSku() } })).producto;
+      }
+      reemplazar(prod);
+      d.id = prod.id;
+      // fotos nuevas, una a una
+      const total = state.pendientes.length;
+      for (let i = 0; i < total; i++) {
+        btn.textContent = `Subiendo foto ${i + 1} de ${total}…`;
+        const f = state.pendientes[0];
+        prod = (await api(`/productos/${encodeURIComponent(prod.id)}/fotos`, { method: "POST", body: { tipo: f.tipo, datos: f.datos } })).producto;
+        state.pendientes.shift(); reemplazar(prod);
+      }
+      toast(p ? avisoGuardado() : (state.modo === "demo" ? "Prenda creada en el panel (modo demo)." : "Prenda creada en Shopify. " + (d.estado === "ACTIVE" ? "Ya está en la web y en el TPV." : "Está en borrador: no se ve en la web hasta que la pongas «En la web».")));
+      cerrarPrenda(); render();
+    } catch (e) {
+      toast(e.message, true);
+      if (state.drawer) { pintarFotos(); $("#dr-title").textContent = d.id ? "Editar prenda" : "Nueva prenda"; }
+    } finally { btn.disabled = false; btn.textContent = "Guardar"; }
+  });
+  function reemplazar(prod) {
+    const i = state.productos.findIndex(x => x.id === prod.id);
+    if (i >= 0) state.productos[i] = prod; else state.productos.unshift(prod);
+  }
+
+  // ---------- VENTAS ----------
+  async function cargarVentas() {
+    try { state.ventas = (await api("/ventas")).ventas; }
+    catch (e) { state.ventas = []; toast(e.message, true); }
+    render();
+  }
+  function renderVentas() {
+    const vs = state.ventas;
+    if (vs === null) { $("#ventas-stats").innerHTML = ""; $("#ventas-table").innerHTML = `<tr><td><div class="loading">Cargando ventas…</div></td></tr>`; return; }
+    const total = vs.reduce((s, o) => s + o.total, 0);
+    const web = vs.filter(o => o.canal === "web"), tpv = vs.filter(o => o.canal === "pos");
+    $("#ventas-stats").innerHTML = [
+      [euro(total), "Total 60 días", `${vs.length} pedidos`],
+      [euro(vs.length ? total / vs.length : 0), "Ticket medio", ""],
+      [euro(web.reduce((s, o) => s + o.total, 0)), "Web", `${web.length} pedidos`],
+      [euro(tpv.reduce((s, o) => s + o.total, 0)), "Tienda (TPV)", `${tpv.length} ventas`],
+    ].map(([n, l, s]) => `<div class="stat"><div class="num">${esc(n)}</div><div class="lbl">${esc(l)}</div><div class="sub">${esc(s)}</div></div>`).join("");
+    $("#ventas-table").innerHTML = vs.length ? `
+      <thead><tr><th>Fecha</th><th>Pedido</th><th>Canal</th><th>Artículos</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody>${vs.map(o => `<tr>
+        <td class="num">${esc(new Date(o.fecha).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</td>
+        <td>${esc(o.numero)}</td>
+        <td><span class="canal">${esc(canalDe(o.canal))}</span></td>
+        <td><div class="lines">${o.lineas.map(l => `${l.cantidad} × ${esc(l.titulo)}${l.variante ? ` (${esc(l.variante)})` : ""}`).join("<br>")}</div></td>
+        <td style="text-align:right;white-space:nowrap">${euro(o.total)}</td></tr>`).join("")}</tbody>`
+      : `<tr><td><div class="empty">${state.modo === "demo" ? "En modo demo no hay ventas. Al conectar Shopify aparecerán aquí las ventas de la web y del TPV." : "Todavía no hay ventas en los últimos 60 días."}</div></td></tr>`;
+  }
+
+  // ---------- arranque ----------
+  async function cargarProductos() {
+    state.productos = (await api("/productos")).productos;
+    render();
+  }
+  async function iniciar() {
+    $("#hoy").textContent = new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+    try {
+      const est = await api("/estado");
+      state.modo = est.modo; state.ctx = est.contexto; state.tipos = est.tipos;
+      const c = $("#conexion");
+      c.classList.add(est.modo === "demo" ? "demo" : "on");
+      c.lastElementChild.textContent = est.modo === "demo" ? "Modo demo" : "Conectado a Shopify";
+      if (est.contexto.dominio) { $("#link-tienda").href = est.contexto.dominio; $("#link-tienda").hidden = false; }
+      if (est.modo === "demo") {
+        const b = document.createElement("div");
+        b.className = "banner-demo";
+        b.innerHTML = "<b>Modo demo.</b> Estás viendo las prendas reales, pero los cambios no se guardan en Shopify. Para conectarlo, sigue los pasos de <b>dashboard/LEEME.md</b>.";
+        $("main").prepend(b);
+      }
+      await cargarProductos();
+      $("#loading").hidden = true;
+      let vista = "resumen";
+      try { vista = localStorage.getItem("otx-panel-vista") || vista; } catch (_) {}
+      irA(["resumen", "stock", "prendas", "ventas"].includes(vista) ? vista : "resumen");
+      if (state.ventas === null) cargarVentas();
+    } catch (e) {
+      $("#loading").textContent = e.message;
+      const c = $("#conexion"); c.lastElementChild.textContent = "Sin conexión";
+    }
+  }
+  iniciar();
+})();
+</script>
+</body>
+</html>
