@@ -381,6 +381,7 @@
   </div>
   <div class="drawer-foot">
     <a class="link" id="dr-admin" href="#" target="_blank" rel="noopener" hidden>Abrir en Shopify</a>
+    <span class="hint" id="dr-auto" aria-live="polite"></span>
     <button class="btn" id="dr-guardar">Guardar</button>
   </div>
 </aside>
@@ -605,7 +606,27 @@
       ? "Se ve en la web y se puede vender en la tienda online y en el TPV."
       : "Solo la ves tú. No aparece en la web.";
   }
-  $("#dr-estado").addEventListener("click", e => { const b = e.target.closest("[data-estado]"); if (b) setEstadoDrawer(b.dataset.estado); });
+  // En una prenda que ya existe, «En la web» / «Borrador» se guarda al momento, sin pulsar «Guardar»
+  $("#dr-estado").addEventListener("click", async e => {
+    const b = e.target.closest("[data-estado]"); if (!b) return;
+    const d = state.drawer, estado = b.dataset.estado;
+    const p = d.id ? state.productos.find(x => x.id === d.id) : null;
+    if (!p || p.estado === estado) return setEstadoDrawer(estado);
+    if (estado === "ACTIVE") {
+      if (!p.fotos.length && !state.pendientes.length && !confirm("Esta prenda no tiene fotos. ¿Ponerla en la web igualmente?")) return;
+      if (stockTotal(p) === 0 && !confirm("Esta prenda no tiene stock: saldrá en la web como «Agotado». ¿Ponerla igualmente?")) return;
+    }
+    const botones = $$("#dr-estado button"); botones.forEach(x => x.disabled = true);
+    $("#dr-estado-hint").textContent = estado === "ACTIVE" ? "Subiendo a la web…" : "Quitando de la web…";
+    try {
+      const prod = (await api("/productos/" + encodeURIComponent(p.id), { method: "POST", body: { estado } })).producto;
+      reemplazar(prod); setEstadoDrawer(prod.estado); render();
+      toast(state.modo === "demo" ? "Cambiado en el panel (modo demo)."
+        : estado === "ACTIVE" ? "Ya está en la web y en el TPV." : "Quitada de la web: ahora está en borrador.");
+    } catch (err) {
+      setEstadoDrawer(p.estado); toast(err.message, true);
+    } finally { botones.forEach(x => x.disabled = false); }
+  });
 
   function abrirPrenda(id) {
     const p = id ? state.productos.find(x => x.id === id) : null;
@@ -619,6 +640,9 @@
     $("#dr-marca").value = p ? p.marca : "Otxaran";
     $("#dr-desc").value = p ? p.descripcion : "";
     setEstadoDrawer(state.drawer.estado);
+    clearTimeout(autoTimer); autoPendiente = false;
+    pintarAuto(p ? "Los cambios se guardan solos en Shopify y en la web." : "");
+    $("#dr-guardar").textContent = p ? "Hecho" : "Crear prenda";
     $("#dr-nueva-tallas").hidden = !!p;
     $("#dr-stock-box").hidden = !p;
     const admin = state.ctx.admin && p ? `${state.ctx.admin}/products/${p.id.split("/").pop()}` : "";
@@ -628,7 +652,12 @@
     $("#drawer").hidden = false; $("#drawer-bg").hidden = false;
     $("#dr-nombre").focus();
   }
-  function cerrarPrenda() { $("#drawer").hidden = true; $("#drawer-bg").hidden = true; state.drawer = null; state.pendientes = []; }
+  async function cerrarPrenda() {
+    const d = state.drawer;
+    if (d && d.id && autoPendiente) { pintarAuto("Guardando…"); await autoguardar(true); }
+    if (d && !d.id && $("#dr-nombre").value.trim() && !confirm("Esta prenda nueva aún no está creada. Si cierras, se pierde. ¿Cerrar igualmente?")) return;
+    $("#drawer").hidden = true; $("#drawer-bg").hidden = true; state.drawer = null; state.pendientes = [];
+  }
   $("#dr-cerrar").addEventListener("click", cerrarPrenda);
   $("#drawer-bg").addEventListener("click", cerrarPrenda);
   document.addEventListener("keydown", e => {
@@ -676,7 +705,22 @@
       try { state.pendientes.push(await prepararFoto(file)); } catch (_) { toast(`No he podido leer ${file.name}`, true); }
     }
     e.target.value = ""; pintarFotos();
+    if (state.drawer && state.drawer.id) subirFotosPendientes();   // prenda que ya existe: se suben ya
   });
+  async function subirFotosPendientes() {
+    const d = state.drawer; if (!d || !d.id || d.subiendo) return;
+    d.subiendo = true;
+    try {
+      while (state.drawer === d && state.pendientes.length) {
+        pintarAuto(`Subiendo foto… (quedan ${state.pendientes.length})`);
+        const f = state.pendientes[0];
+        const prod = (await api(`/productos/${encodeURIComponent(d.id)}/fotos`, { method: "POST", body: { tipo: f.tipo, datos: f.datos } })).producto;
+        state.pendientes.shift(); reemplazar(prod); pintarFotos(); render();
+      }
+      pintarAuto(state.modo === "demo" ? "Fotos guardadas en el panel (modo demo) ✓" : "Fotos subidas a Shopify y a la web ✓");
+    } catch (e) { pintarAuto("Una foto no se ha podido subir."); toast(e.message, true); }
+    finally { d.subiendo = false; }
+  }
   function prepararFoto(file) {
     return new Promise((ok, mal) => {
       const img = new Image(), url = URL.createObjectURL(file);
@@ -699,8 +743,51 @@
     return "OTX-" + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(2, "0");
   }
 
+  // ---------- guardado automático (prendas que ya existen) ----------
+  // Cada cambio en nombre, precio, tipo, marca o descripción se guarda solo, al poco de dejar de escribir.
+  let autoTimer = null, autoCola = Promise.resolve(), autoPendiente = false;
+  function cambiosDe(p) {
+    const datos = { titulo: $("#dr-nombre").value.trim(), precio: $("#dr-precio").value.trim(), tipo: $("#dr-tipo").value,
+                    marca: $("#dr-marca").value.trim(), descripcion: $("#dr-desc").value };
+    const c = {};
+    if (datos.titulo && datos.titulo !== p.titulo) c.titulo = datos.titulo;
+    const precio = parseFloat(datos.precio.replace(",", "."));
+    if (precio > 0 && precio !== precioDe(p)) c.precio = datos.precio;
+    if (datos.tipo !== p.tipo) c.tipo = datos.tipo;
+    if (datos.marca !== p.marca) c.marca = datos.marca;
+    if (datos.descripcion.trim() !== p.descripcion.trim()) c.descripcion = datos.descripcion;
+    return c;
+  }
+  function pintarAuto(texto) { const h = $("#dr-auto"); if (h) h.textContent = texto; }
+  function autoguardar(ya = false) {
+    const d = state.drawer; if (!d || !d.id) return;
+    clearTimeout(autoTimer); autoPendiente = true; pintarAuto("Cambios sin guardar…");
+    const tarea = () => (autoCola = autoCola.then(async () => {
+        const p = state.productos.find(x => x.id === d.id); if (!p) return;
+        const c = cambiosDe(p);
+        if (!Object.keys(c).length) { autoPendiente = false; pintarAuto("Todo guardado ✓"); return; }
+        pintarAuto("Guardando…");
+        try {
+          const prod = (await api("/productos/" + encodeURIComponent(p.id), { method: "POST", body: c })).producto;
+          reemplazar(prod); render();
+          autoPendiente = false;
+          pintarAuto(state.modo === "demo" ? "Guardado en el panel (modo demo) ✓" : "Todo guardado en Shopify y en la web ✓");
+        } catch (e) { pintarAuto("No se ha podido guardar. Vuelve a intentarlo."); toast(e.message, true); }
+      }));
+    if (ya) return tarea();
+    autoTimer = setTimeout(tarea, 900);
+    return autoCola;
+  }
+  ["#dr-nombre", "#dr-precio", "#dr-marca", "#dr-desc"].forEach(s => {
+    $(s).addEventListener("input", () => autoguardar());
+    $(s).addEventListener("blur", () => { if (autoPendiente) autoguardar(true); });
+  });
+  $("#dr-tipo").addEventListener("change", () => autoguardar(true));
+  window.addEventListener("beforeunload", e => { if (autoPendiente) { e.preventDefault(); e.returnValue = ""; } });
+
   $("#dr-guardar").addEventListener("click", async () => {
     const d = state.drawer; if (!d) return;
+    clearTimeout(autoTimer); await autoCola;
     const p = d.id ? state.productos.find(x => x.id === d.id) : null;
     const datos = {
       titulo: $("#dr-nombre").value.trim(), precio: $("#dr-precio").value.trim(), tipo: $("#dr-tipo").value,
@@ -729,7 +816,8 @@
       }
       reemplazar(prod);
       d.id = prod.id;
-      // fotos nuevas, una a una
+      // fotos nuevas, una a una (en una prenda que ya existe se suben solas al elegirlas)
+      while (d.subiendo) await new Promise(r => setTimeout(r, 300));
       const total = state.pendientes.length;
       for (let i = 0; i < total; i++) {
         btn.textContent = `Subiendo foto ${i + 1} de ${total}…`;
@@ -738,11 +826,11 @@
         state.pendientes.shift(); reemplazar(prod);
       }
       toast(p ? avisoGuardado() : (state.modo === "demo" ? "Prenda creada en el panel (modo demo)." : "Prenda creada en Shopify. " + (d.estado === "ACTIVE" ? "Ya está en la web y en el TPV." : "Está en borrador: no se ve en la web hasta que la pongas «En la web».")));
-      cerrarPrenda(); render();
+      autoPendiente = false; cerrarPrenda(); render();
     } catch (e) {
       toast(e.message, true);
       if (state.drawer) { pintarFotos(); $("#dr-title").textContent = d.id ? "Editar prenda" : "Nueva prenda"; }
-    } finally { btn.disabled = false; btn.textContent = "Guardar"; }
+    } finally { btn.disabled = false; btn.textContent = d.id ? "Hecho" : "Crear prenda"; }
   });
   function reemplazar(prod) {
     const i = state.productos.findIndex(x => x.id === prod.id);
