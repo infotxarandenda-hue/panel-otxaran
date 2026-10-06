@@ -220,6 +220,7 @@ module Shopify
                 input: input)['productSet'])
     id = r['product']['id']
     publicar(id)
+    preparar_para_web(id) if datos['estado'] == 'ACTIVE'
     id
   end
 
@@ -237,8 +238,25 @@ module Shopify
       ok!(gql('mutation precio($productId: ID!, $variants: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $productId, variants: $variants) { productVariants { id } userErrors { field message } } }',
               productId: id, variants: variantes.map { |v| { id: v['id'], price: format('%.2f', datos['precio']) } })['productVariantsBulkUpdate'])
     end
-    publicar(id) if datos['estado'] == 'ACTIVE'
+    if datos['estado'] == 'ACTIVE'
+      publicar(id)
+      preparar_para_web(id)
+    end
     id
+  end
+
+  # Para que salga en el menú de la web tiene que estar en una colección (etiqueta prendas, accesorios u outlet),
+  # y ya no está «pendiente de stock».
+  def self.preparar_para_web(id)
+    tags = gql('query t($id: ID!) { product(id: $id) { tags } }', id: id)['product']['tags']
+    unless (tags & %w[prendas accesorios outlet]).any?
+      ok!(gql('mutation a($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { field message } } }',
+              id: id, tags: ['prendas'])['tagsAdd'])
+    end
+    if tags.include?('stock-pendiente')
+      ok!(gql('mutation q($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { field message } } }',
+              id: id, tags: ['stock-pendiente'])['tagsRemove'])
+    end
   end
 
   def self.subir_foto(id, nombre, mime, bytes, alt)
@@ -340,6 +358,11 @@ end
 
 BACKEND = MODO == 'shopify' ? Shopify : Demo
 
+# El servidor junta las dos barras de «gid://» al leer la dirección: se recuperan aquí
+def id_de_ruta(trozo)
+  URI.decode_www_form_component(trozo).sub(%r{\Agid:/+}, "gid://")
+end
+
 # ---------- validación de lo que llega del panel ----------
 def validar_producto!(d, nuevo)
   if nuevo || d.key?('titulo')
@@ -416,7 +439,7 @@ servidor.mount_proc('/api/') do |req, res|
       responder(res, 200, 'ventas' => BACKEND.ventas)
     else
       if req.request_method == 'POST' && ruta =~ %r{\A/productos/(.+)/fotos\z}
-        id = URI.decode_www_form_component(Regexp.last_match(1))
+        id = id_de_ruta(Regexp.last_match(1))
         mime = datos['tipo'].to_s
         raise ErrorPanel.new('Solo se pueden subir fotos JPG, PNG o WebP') unless %w[image/jpeg image/png image/webp].include?(mime)
         require 'base64'
@@ -428,7 +451,7 @@ servidor.mount_proc('/api/') do |req, res|
         BACKEND.subir_foto(id, nombre, mime, bytes, p['titulo'])
         responder(res, 200, 'producto' => BACKEND.producto(id))
       elsif req.request_method == 'POST' && ruta =~ %r{\A/productos/(.+)\z}
-        id = URI.decode_www_form_component(Regexp.last_match(1))
+        id = id_de_ruta(Regexp.last_match(1))
         BACKEND.editar(id, validar_producto!(datos, false))
         responder(res, 200, 'producto' => BACKEND.producto(id))
       else
