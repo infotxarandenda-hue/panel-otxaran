@@ -472,7 +472,22 @@ servidor.mount_proc('/api/') do |req, res|
   end
 end
 
+# Archivos de la aplicación instalable (logo, manifiesto y service worker): sin datos de la tienda,
+# así que se sirven sin contraseña para que el navegador pueda instalar el panel.
+ARCHIVOS_APP = {
+  '/manifest.webmanifest' => 'application/manifest+json',
+  '/sw.js' => 'text/javascript; charset=utf-8',
+  '/iconos/icono-192.png' => 'image/png', '/iconos/icono-512.png' => 'image/png',
+  '/iconos/apple-touch-icon.png' => 'image/png', '/iconos/favicon-32.png' => 'image/png', '/iconos/favicon-64.png' => 'image/png'
+}.freeze
+
 servidor.mount_proc('/') do |req, res|
+  if (tipo = ARCHIVOS_APP[req.path])
+    res['Content-Type'] = tipo
+    res['Cache-Control'] = req.path == '/sw.js' ? 'no-cache' : 'public, max-age=86400'
+    res.body = File.binread(File.join(DIR, 'public', req.path))
+    next
+  end
   next unless autorizado?(req, res)
   if req.path == '/' || req.path == '/index.html'
     res['Content-Type'] = 'text/html; charset=utf-8'
