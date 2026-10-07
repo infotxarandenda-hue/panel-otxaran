@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Panel · Otxaran</title>
+<!-- aplicación instalable -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#111111">
+<link rel="icon" type="image/png" sizes="32x32" href="/iconos/favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="/iconos/favicon-64.png">
+<link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Otxaran">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -53,6 +63,8 @@
   .conexion.demo i{background:var(--warn);}
   .estado a{opacity:0.6;}
   .estado a:hover{opacity:1;}
+  .instalar{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;border:1px solid var(--ink);padding:7px 12px;background:none;cursor:pointer;}
+  .instalar:hover{background:var(--ink);color:#fff;}
 
   .banner-demo{
     margin:0 4vw 0;padding:12px 16px;border:1px solid var(--warn);background:var(--warn-bg);color:var(--warn);
@@ -244,6 +256,7 @@
   <div class="estado">
     <span class="conexion" id="conexion"><i></i><span>Conectando…</span></span>
     <a id="link-tienda" href="#" target="_blank" rel="noopener" hidden>Ver tienda</a>
+    <button type="button" class="instalar" id="instalar" hidden>Instalar app</button>
   </div>
 </header>
 
@@ -899,6 +912,16 @@
     }
   }
   iniciar();
+
+  // ---------- aplicación instalable ----------
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  let avisoInstalar = null;
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); avisoInstalar = e; $("#instalar").hidden = false; });
+  window.addEventListener("appinstalled", () => { $("#instalar").hidden = true; toast("Panel instalado. Ya lo tienes como aplicación."); });
+  $("#instalar").addEventListener("click", async () => {
+    if (!avisoInstalar) return;
+    avisoInstalar.prompt(); await avisoInstalar.userChoice; avisoInstalar = null; $("#instalar").hidden = true;
+  });
 })();
 </script>
 </body>
