@@ -198,6 +198,14 @@
   .photos .add:hover{border-color:var(--ink);color:var(--ink);}
   .photos .add b{font-size:24px;font-weight:300;}
   .photos .pending{opacity:0.45;}
+  .photos button.add{font:inherit;cursor:pointer;}
+  .foto-grupo{margin-bottom:22px;}
+  .foto-grupo .photos{margin-bottom:0;}
+  .foto-grupo-titulo{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px;opacity:0.7;}
+  .color-fila{margin-bottom:14px;}
+  .color-fila-nombre{font-size:12px;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;font-weight:600;}
+  .chip .quitar{margin-left:6px;opacity:0.6;}
+  .lbl .opc{text-transform:none;letter-spacing:0;opacity:0.6;}
   .field{margin-bottom:22px;}
   .field label,.field .lbl{display:block;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
   .field input[type=text],.field input[type=number],.field select,.field textarea{
@@ -387,8 +395,13 @@
         <div class="hint">Toca para elegir. ¿Otra talla? Escríbela y pulsa Enter: <input type="text" id="dr-talla-extra" style="border:none;border-bottom:1px solid var(--line);width:70px;outline:none;font-size:13px"></div>
       </div>
       <div class="field">
-        <span class="lbl">Unidades por talla</span>
-        <div class="size-grid" id="dr-stock-in"></div>
+        <span class="lbl">Colores <span class="opc">(opcional)</span></span>
+        <div class="chips" id="dr-colores"></div>
+        <div class="hint">¿La misma prenda en varios colores? Escribe un color y pulsa Enter: <input type="text" id="dr-color-nuevo" maxlength="30" autocomplete="off" placeholder="p. ej. Negro" style="border:none;border-bottom:1px solid var(--line);width:120px;outline:none;font-size:13px"><br>Cada color tendrá sus unidades y sus fotos. Si la prenda es de un solo color, déjalo vacío.</div>
+      </div>
+      <div class="field">
+        <span class="lbl" id="dr-stock-lbl">Unidades por talla</span>
+        <div id="dr-stock-in"></div>
       </div>
     </div>
     <!-- solo al editar -->
@@ -464,6 +477,7 @@
   const stockTotal = p => p.variantes.reduce((s, v) => s + v.stock, 0);
   const skuBase = p => { const s = p.variantes[0]?.sku || ""; return (s.match(/^[A-Z]+-\d+/) || [s])[0]; };
   const tallasDe = p => (p.opciones.find(o => o.nombre === "Talla")?.valores) || [];
+  const coloresDe = p => (p.opciones.find(o => /^(color|colour|kolorea)$/i.test(o.nombre))?.valores) || [];
   // filas de stock: una por prenda, o una por color si la prenda tiene colores
   function filasStock(p) {
     const color = p.opciones.find(o => o.nombre === "Color");
@@ -667,8 +681,8 @@
   function abrirPrenda(id) {
     const p = id ? state.productos.find(x => x.id === id) : null;
     if (id && !p) return;
-    state.drawer = { id, estado: p ? (estadoWeb(p) === "ACTIVE" ? "ACTIVE" : "DRAFT") : "DRAFT", tallas: p ? tallasDe(p) : ["S", "M", "L", "XL"], stockNuevo: {} };
-    state.pendientes = [];
+    state.drawer = { id, estado: p ? (estadoWeb(p) === "ACTIVE" ? "ACTIVE" : "DRAFT") : "DRAFT", tallas: p ? tallasDe(p) : ["S", "M", "L", "XL"], stockNuevo: {}, colores: [] };
+    state.pendientes = []; state.colorFoto = ""; $("#dr-color-nuevo").value = "";
     $("#dr-title").textContent = p ? "Editar prenda" : "Nueva prenda";
     $("#dr-tipo").innerHTML = state.tipos.map(t => `<option ${p && p.tipo === t ? "selected" : ""}>${esc(t)}</option>`).join("");
     $("#dr-nombre").value = p ? p.titulo : "";
@@ -702,12 +716,35 @@
     if (!$("#stock-modal").hidden) cerrarStock(); else if (state.drawer) cerrarPrenda();
   });
 
+  // Si la prenda tiene colores, las fotos van en un bloque por color (y uno de «Generales»)
   function pintarFotos() {
-    const p = state.drawer.id ? state.productos.find(x => x.id === state.drawer.id) : null;
-    const actuales = p ? p.fotos.map(f => `<img src="${esc(f.url)}" alt="">`) : [];
-    const pend = state.pendientes.map(f => `<img class="pending" src="${esc(f.preview)}" alt="Pendiente de subir">`);
-    $("#dr-fotos").innerHTML = actuales.concat(pend).join("") + `<label class="add" for="dr-file"><b>+</b>Añadir fotos</label>`;
+    const d = state.drawer;
+    const p = d.id ? state.productos.find(x => x.id === d.id) : null;
+    const colores = p ? coloresDe(p) : d.colores;
+    const caja = $("#dr-fotos");
+    if (!colores.length) {
+      const actuales = p ? p.fotos.map(f => `<img src="${esc(f.url)}" alt="">`) : [];
+      const pend = state.pendientes.map(f => `<img class="pending" src="${esc(f.preview)}" alt="Pendiente de subir">`);
+      caja.classList.add("photos");
+      caja.innerHTML = actuales.concat(pend).join("") + `<button type="button" class="add" data-foto-color=""><b>+</b>Añadir fotos</button>`;
+      return;
+    }
+    const deColor = (alt, c) => (alt || "").toLowerCase().endsWith(" · " + c.toLowerCase());
+    const grupos = [{ nombre: "Generales", color: "" }, ...colores.map(c => ({ nombre: c, color: c }))];
+    caja.classList.remove("photos");
+    caja.innerHTML = grupos.map(g => {
+      const actuales = p ? p.fotos.filter(f => g.color ? deColor(f.alt, g.color) : !colores.some(c => deColor(f.alt, c))) : [];
+      const pend = state.pendientes.filter(f => (f.color || "") === g.color);
+      return `<div class="foto-grupo"><p class="foto-grupo-titulo">${g.color ? "Fotos · " + esc(g.nombre) : "Fotos generales (opcional)"}</p><div class="photos">` +
+        actuales.map(f => `<img src="${esc(f.url)}" alt="">`).join("") +
+        pend.map(f => `<img class="pending" src="${esc(f.preview)}" alt="Pendiente de subir">`).join("") +
+        `<button type="button" class="add" data-foto-color="${esc(g.color)}"><b>+</b>${g.color ? "Fotos " + esc(g.nombre) : "Añadir"}</button></div></div>`;
+    }).join("");
   }
+  $("#dr-fotos").addEventListener("click", e => {
+    const b = e.target.closest("[data-foto-color]"); if (!b) return;
+    state.colorFoto = b.dataset.fotoColor; $("#dr-file").click();
+  });
   function pintarStockDrawer() {
     const p = state.productos.find(x => x.id === state.drawer.id); if (!p) return;
     $("#dr-stock").innerHTML = p.variantes.map(v => `<button class="pill ${v.stock === 0 ? "zero" : v.stock === 1 ? "low" : ""}" data-stock="${esc(v.item)}" style="padding:0 12px">${esc(v.titulo)} · ${v.stock}</button>`).join("");
@@ -753,15 +790,38 @@
     const todas = [...new Set([...tallasRapidas($("#dr-tipo").value), ...d.tallas])];
     $("#dr-tallas").innerHTML = todas.map(t => `<button type="button" class="chip ${d.tallas.includes(t) ? "on" : ""}" data-talla="${esc(t)}">${esc(t)}</button>`).join("");
     d.tallas.sort((a, b) => ordenTalla(a) - ordenTalla(b));
-    $("#dr-stock-in").innerHTML = d.tallas.map(t => `<label class="size-in"><span>${esc(t)}</span><input type="number" min="0" inputmode="numeric" data-talla="${esc(t)}" value="${d.stockNuevo[t] ?? 0}"></label>`).join("");
+    $("#dr-colores").innerHTML = d.colores.map(c => `<button type="button" class="chip on" data-quitar-color="${esc(c)}" title="Quitar ${esc(c)}">${esc(c)}<span class="quitar">✕</span></button>`).join("");
+    $("#dr-stock-lbl").textContent = d.colores.length ? "Unidades por talla y color" : "Unidades por talla";
+    const celda = (t, c) => { const k = c ? `${t}|${c}` : t;
+      return `<label class="size-in"><span>${esc(t)}</span><input type="number" min="0" inputmode="numeric" data-talla="${esc(t)}" data-color="${esc(c || "")}" value="${d.stockNuevo[k] ?? 0}"></label>`; };
+    $("#dr-stock-in").innerHTML = d.colores.length
+      ? d.colores.map(c => `<div class="color-fila"><div class="color-fila-nombre">${esc(c)}</div><div class="size-grid">${d.tallas.map(t => celda(t, c)).join("")}</div></div>`).join("")
+      : `<div class="size-grid">${d.tallas.map(t => celda(t)).join("")}</div>`;
   }
+  $("#dr-color-nuevo").addEventListener("keydown", e => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const c = e.target.value.trim(); if (!c) return;
+    const d = state.drawer;
+    if (!d.colores.some(x => x.toLowerCase() === c.toLowerCase())) d.colores.push(c.charAt(0).toUpperCase() + c.slice(1));
+    e.target.value = ""; pintarTallasNuevas(); pintarFotos();
+  });
+  $("#dr-colores").addEventListener("click", e => {
+    const b = e.target.closest("[data-quitar-color]"); if (!b) return;
+    const d = state.drawer, c = b.dataset.quitarColor;
+    d.colores = d.colores.filter(x => x !== c);
+    state.pendientes.forEach(f => { if (f.color === c) f.color = ""; });   // sus fotos pasan a «Generales»
+    pintarTallasNuevas(); pintarFotos();
+  });
   $("#dr-tallas").addEventListener("click", e => {
     const b = e.target.closest("[data-talla]"); if (!b) return;
     const d = state.drawer, t = b.dataset.talla;
     d.tallas = d.tallas.includes(t) ? d.tallas.filter(x => x !== t) : [...d.tallas, t];
     pintarTallasNuevas();
   });
-  $("#dr-stock-in").addEventListener("input", e => { const i = e.target.closest("[data-talla]"); if (i) state.drawer.stockNuevo[i.dataset.talla] = parseInt(i.value, 10) || 0; });
+  $("#dr-stock-in").addEventListener("input", e => { const i = e.target.closest("[data-talla]"); if (!i) return;
+    const k = i.dataset.color ? `${i.dataset.talla}|${i.dataset.color}` : i.dataset.talla;
+    state.drawer.stockNuevo[k] = parseInt(i.value, 10) || 0; });
   $("#dr-talla-extra").addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
     e.preventDefault();
@@ -773,7 +833,7 @@
   // fotos: se reducen a 1600 px en el navegador antes de subirlas
   $("#dr-file").addEventListener("change", async e => {
     for (const file of e.target.files) {
-      try { state.pendientes.push(await prepararFoto(file)); } catch (_) { toast(`No he podido leer ${file.name}`, true); }
+      try { state.pendientes.push({ ...(await prepararFoto(file)), color: state.colorFoto || "" }); } catch (_) { toast(`No he podido leer ${file.name}`, true); }
     }
     e.target.value = ""; pintarFotos();
     if (state.drawer && state.drawer.id) subirFotosPendientes();   // prenda que ya existe: se suben ya
@@ -785,7 +845,7 @@
       while (state.drawer === d && state.pendientes.length) {
         pintarAuto(`Subiendo foto… (quedan ${state.pendientes.length})`);
         const f = state.pendientes[0];
-        const prod = (await api(`/productos/${encodeURIComponent(d.id)}/fotos`, { method: "POST", body: { tipo: f.tipo, datos: f.datos } })).producto;
+        const prod = (await api(`/productos/${encodeURIComponent(d.id)}/fotos`, { method: "POST", body: { tipo: f.tipo, datos: f.datos, color: f.color || "" } })).producto;
         state.pendientes.shift(); reemplazar(prod); pintarFotos(); render();
       }
       pintarAuto(state.modo === "demo" ? "Fotos guardadas en el panel (modo demo) ✓" : "Fotos subidas a Shopify y a la web ✓");
@@ -883,7 +943,8 @@
         if (datos.estado !== estadoWeb(p)) cambios.estado = datos.estado;
         prod = Object.keys(cambios).length ? (await api("/productos/" + encodeURIComponent(p.id), { method: "POST", body: cambios })).producto : p;
       } else {
-        prod = (await api("/productos", { method: "POST", body: { ...datos, tallas: d.tallas, stock: d.stockNuevo, sku: siguienteSku() } })).producto;
+        prod = (await api("/productos", { method: "POST", body: { ...datos, tallas: d.tallas, colores: d.colores, stock: d.stockNuevo, sku: siguienteSku() } })).producto;
+        state.pendientes.sort((a, b) => ["", ...d.colores].indexOf(a.color || "") - ["", ...d.colores].indexOf(b.color || ""));
       }
       reemplazar(prod);
       d.id = prod.id;
@@ -893,7 +954,7 @@
       for (let i = 0; i < total; i++) {
         btn.textContent = `Subiendo foto ${i + 1} de ${total}…`;
         const f = state.pendientes[0];
-        prod = (await api(`/productos/${encodeURIComponent(prod.id)}/fotos`, { method: "POST", body: { tipo: f.tipo, datos: f.datos } })).producto;
+        prod = (await api(`/productos/${encodeURIComponent(prod.id)}/fotos`, { method: "POST", body: { tipo: f.tipo, datos: f.datos, color: f.color || "" } })).producto;
         state.pendientes.shift(); reemplazar(prod);
       }
       toast(p ? avisoGuardado() : (state.modo === "demo" ? "Prenda creada en el panel (modo demo)." : "Prenda creada en Shopify. " + (d.estado === "ACTIVE" ? "Ya está en la web y en el TPV." : "Está en borrador: no se ve en la web hasta que la pongas «En la web».")));
