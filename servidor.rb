@@ -215,7 +215,7 @@ module Shopify
       productOptions: [{ name: 'Talla', values: tallas.map { |t| { name: t } } }],
       variants: tallas.map do |t|
         { optionValues: [{ optionName: 'Talla', name: t }], price: format('%.2f', datos['precio']),
-          sku: "#{datos['sku']}-#{t.upcase.delete(' ')}", inventoryItem: { tracked: true },
+          sku: "#{datos['sku']}-#{t.upcase.delete(' ').tr('/', '-')}", inventoryItem: { tracked: true },   # XS/S → OTX-35-XS-S
           inventoryQuantities: [{ locationId: loc, name: 'available', quantity: datos['stock'][t].to_i }] }
       end
     }
@@ -328,7 +328,7 @@ module Demo
         'marca' => datos['marca'], 'etiquetas' => datos['etiquetas'], 'descripcion' => datos['descripcion'].to_s, 'url' => nil,
         'fotos' => [], 'opciones' => [{ 'nombre' => 'Talla', 'valores' => datos['tallas'] }],
         'variantes' => datos['tallas'].map.with_index do |t, i|
-          { 'id' => "#{id}/v#{i}", 'titulo' => t, 'sku' => "#{datos['sku']}-#{t.upcase.delete(' ')}", 'precio' => datos['precio'].to_f,
+          { 'id' => "#{id}/v#{i}", 'titulo' => t, 'sku' => "#{datos['sku']}-#{t.upcase.delete(' ').tr('/', '-')}", 'precio' => datos['precio'].to_f,
             'opciones' => { 'Talla' => t }, 'item' => "#{id}/i#{i}", 'stock' => datos['stock'][t].to_i }
         end
       )
