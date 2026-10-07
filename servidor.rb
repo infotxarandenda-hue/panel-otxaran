@@ -144,7 +144,7 @@ module Shopify
       products(first: 50, after: $after, sortKey: CREATED_AT, reverse: true) {
         pageInfo { hasNextPage endCursor }
         nodes { id handle title status productType vendor tags descriptionHtml totalInventory onlineStoreUrl
-          media(first: 20) { nodes { id ... on MediaImage { image { url(transform: {maxWidth: 900}) } } } }
+          media(first: 50) { nodes { id alt ... on MediaImage { image { url(transform: {maxWidth: 900}) } } } }
           options { name values }
           variants(first: 100) { nodes { id title sku price selectedOptions { name value }
             inventoryItem { id inventoryLevel(locationId: $loc) { quantities(names: ["available"]) { name quantity } } } } } } } }
@@ -173,7 +173,7 @@ module Shopify
       'tipo' => p['productType'], 'marca' => p['vendor'], 'etiquetas' => p['tags'],
       'descripcion' => html_a_texto(p['descriptionHtml']), 'url' => p['onlineStoreUrl'],
       'publicada' => !p['onlineStoreUrl'].nil?,   # activa Y publicada en la tienda online
-      'fotos' => p['media']['nodes'].select { |m| m['image'] }.map { |m| { 'id' => m['id'], 'url' => m['image']['url'] } },
+      'fotos' => p['media']['nodes'].select { |m| m['image'] }.map { |m| { 'id' => m['id'], 'url' => m['image']['url'], 'alt' => m['alt'].to_s } },
       'opciones' => p['options'].map { |o| { 'nombre' => o['name'], 'valores' => o['values'] } },
       'variantes' => p['variants']['nodes'].map do |v|
         lvl = v['inventoryItem']['inventoryLevel']
@@ -217,14 +217,21 @@ module Shopify
   def self.crear(datos)
     loc = contexto['ubicacion']['id']
     tallas = datos['tallas']
+    colores = datos['colores'] || []
+    opciones = [{ name: 'Talla', values: tallas.map { |t| { name: t } } }]
+    opciones << { name: 'Color', values: colores.map { |c| { name: c } } } if colores.any?
+    # Con colores: una variante por talla y color; las unidades llegan como "talla|color"
+    combos = colores.any? ? tallas.product(colores) : tallas.map { |t| [t, nil] }
     input = {
       title: datos['titulo'], descriptionHtml: texto_a_html(datos['descripcion']), vendor: datos['marca'],
       productType: datos['tipo'], tags: datos['etiquetas'], status: datos['estado'],
-      productOptions: [{ name: 'Talla', values: tallas.map { |t| { name: t } } }],
-      variants: tallas.map do |t|
-        { optionValues: [{ optionName: 'Talla', name: t }], price: format('%.2f', datos['precio']),
-          sku: "#{datos['sku']}-#{t.upcase.delete(' ').tr('/', '-')}", inventoryItem: { tracked: true },   # XS/S → OTX-35-XS-S
-          inventoryQuantities: [{ locationId: loc, name: 'available', quantity: datos['stock'][t].to_i }] }
+      productOptions: opciones,
+      variants: combos.map do |t, c|
+        valores = [{ optionName: 'Talla', name: t }]
+        valores << { optionName: 'Color', name: c } if c
+        { optionValues: valores, price: format('%.2f', datos['precio']),
+          sku: [datos['sku'], sufijo_talla(t), (sufijo_opcion(c) if c)].compact.join('-'), inventoryItem: { tracked: true },   # OTX-35-XS-S-ROJO
+          inventoryQuantities: [{ locationId: loc, name: 'available', quantity: datos['stock'][c ? "#{t}|#{c}" : t].to_i }] }
       end
     }
     r = ok!(gql('mutation crear($input: ProductSetInput!) { productSet(input: $input, synchronous: true) { product { id } userErrors { field message } } }',
@@ -295,7 +302,7 @@ module Shopify
     id
   end
 
-  def self.subir_foto(id, nombre, mime, bytes, alt)
+  def self.subir_foto(id, nombre, mime, bytes, alt, color = nil)
     destino = ok!(gql('mutation subida($input: [StagedUploadInput!]!) { stagedUploadsCreate(input: $input) { stagedTargets { url resourceUrl } userErrors { field message } } }',
                       input: [{ resource: 'IMAGE', filename: nombre, mimeType: mime, httpMethod: 'PUT' }])['stagedUploadsCreate'])['stagedTargets'].first
     uri = URI(destino['url'])
@@ -303,9 +310,29 @@ module Shopify
     put.body = bytes
     res = Net::HTTP.start(uri.host, uri.port, use_ssl: true, read_timeout: 120) { |h| h.request(put) }
     raise ErrorPanel.new("No se ha podido subir la foto (#{res.code})", 502) unless res.code.start_with?('2')
-    ok!(gql('mutation foto($product: ProductUpdateInput!, $media: [CreateMediaInput!]) { productUpdate(product: $product, media: $media) { product { id } userErrors { field message } } }',
-            product: { id: id }, media: [{ originalSource: destino['resourceUrl'], mediaContentType: 'IMAGE', alt: alt }])['productUpdate'])
+    alt = "#{alt} · #{color}" if color
+    r = ok!(gql('mutation foto($product: ProductUpdateInput!, $media: [CreateMediaInput!]) { productUpdate(product: $product, media: $media) { product { id media(first: 250) { nodes { id } } } userErrors { field message } } }',
+                product: { id: id }, media: [{ originalSource: destino['resourceUrl'], mediaContentType: 'IMAGE', alt: alt }])['productUpdate'])
+    asignar_foto_a_color(id, r['product']['media']['nodes'].last['id'], color) if color   # la nueva es la última
     id
+  end
+
+  def self.asignar_foto_a_color(id, media_id, color)
+    variantes = gql('query v($id: ID!) { product(id: $id) { variants(first: 100) { nodes { id selectedOptions { name value } media(first: 1) { nodes { id } } } } } }',
+                    id: id)['product']['variants']['nodes']
+    sin_foto = variantes.select do |v|
+      v['selectedOptions'].any? { |o| o['name'] =~ /color|colour|kolore/i && o['value'].casecmp?(color) } && v['media']['nodes'].empty?
+    end
+    return if sin_foto.empty?   # ese color ya tiene su foto principal
+    # Shopify procesa la foto unos segundos; hasta que está lista no se puede asignar
+    20.times do
+      estado = gql('query m($id: ID!) { node(id: $id) { ... on MediaImage { status } } }', id: media_id)['node']['status']
+      break if estado == 'READY'
+      raise ErrorPanel.new('Shopify no ha podido procesar la foto', 502) if estado == 'FAILED'
+      sleep 1.5
+    end
+    ok!(gql('mutation vm($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) { productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) { userErrors { field message } } }',
+            productId: id, variantMedia: sin_foto.map { |v| { variantId: v['id'], mediaIds: [media_id] } })['productVariantAppendMedia'])
   end
 
   def self.ventas
@@ -358,10 +385,14 @@ module Demo
       @productos.unshift(
         'id' => id, 'handle' => '', 'titulo' => datos['titulo'], 'estado' => datos['estado'], 'tipo' => datos['tipo'],
         'marca' => datos['marca'], 'etiquetas' => datos['etiquetas'], 'descripcion' => datos['descripcion'].to_s, 'url' => nil,
-        'fotos' => [], 'opciones' => [{ 'nombre' => 'Talla', 'valores' => datos['tallas'] }],
-        'variantes' => datos['tallas'].map.with_index do |t, i|
-          { 'id' => "#{id}/v#{i}", 'titulo' => t, 'sku' => "#{datos['sku']}-#{t.upcase.delete(' ').tr('/', '-')}", 'precio' => datos['precio'].to_f,
-            'opciones' => { 'Talla' => t }, 'item' => "#{id}/i#{i}", 'stock' => datos['stock'][t].to_i }
+        'fotos' => [],
+        'opciones' => [{ 'nombre' => 'Talla', 'valores' => datos['tallas'] }] +
+                      ((datos['colores'] || []).any? ? [{ 'nombre' => 'Color', 'valores' => datos['colores'] }] : []),
+        'variantes' => ((datos['colores'] || []).any? ? datos['tallas'].product(datos['colores']) : datos['tallas'].map { |t| [t, nil] }).map.with_index do |(t, c), i|
+          { 'id' => "#{id}/v#{i}", 'titulo' => [t, c].compact.join(' / '),
+            'sku' => [datos['sku'], sufijo_talla(t), (sufijo_opcion(c) if c)].compact.join('-'), 'precio' => datos['precio'].to_f,
+            'opciones' => c ? { 'Talla' => t, 'Color' => c } : { 'Talla' => t }, 'item' => "#{id}/i#{i}",
+            'stock' => datos['stock'][c ? "#{t}|#{c}" : t].to_i }
         end
       )
       id
@@ -394,10 +425,11 @@ module Demo
     id
   end
 
-  def self.subir_foto(id, _nombre, mime, bytes, _alt)
+  def self.subir_foto(id, _nombre, mime, bytes, alt, color = nil)
     require 'base64'
     @mutex.synchronize do
-      producto(id)['fotos'] << { 'id' => "demo/foto/#{Time.now.to_f}", 'url' => "data:#{mime};base64,#{Base64.strict_encode64(bytes)}" }
+      producto(id)['fotos'] << { 'id' => "demo/foto/#{Time.now.to_f}", 'url' => "data:#{mime};base64,#{Base64.strict_encode64(bytes)}",
+                                 'alt' => color ? "#{alt} · #{color}" : alt.to_s }
     end
     id
   end
@@ -431,6 +463,9 @@ def validar_producto!(d, nuevo)
     d['tallas'] = Array(d['tallas']).map(&:to_s).map(&:strip).reject(&:empty?).uniq
     raise ErrorPanel.new('Elige al menos una talla') if d['tallas'].empty?
     d['stock'] = (d['stock'] || {}).map { |k, v| [k, [v.to_i, 0].max] }.to_h
+    d['colores'] = Array(d['colores']).map { |c| c.to_s.strip }.reject(&:empty?).uniq { |c| c.downcase }
+    raise ErrorPanel.new('Como mucho 12 colores por prenda') if d['colores'].size > 12
+    raise ErrorPanel.new('El nombre de un color es demasiado largo') if d['colores'].any? { |c| c.length > 30 }
     d['marca'] = d['marca'].to_s.strip.empty? ? 'Otxaran' : d['marca'].strip
     d['etiquetas'] = [d['tipo'] == 'Accesorios' ? 'accesorios' : 'prendas']
     raise ErrorPanel.new('Falta el código (SKU)') unless d['sku'].to_s =~ /\A[A-Z0-9-]+\z/
@@ -499,7 +534,8 @@ servidor.mount_proc('/api/') do |req, res|
         raise ErrorPanel.new('La foto pesa demasiado (máx. 15 MB)') if bytes.bytesize > 15_000_000
         p = BACKEND.producto(id)
         nombre = "#{p['handle'].to_s.empty? ? 'prenda' : p['handle']}-#{Time.now.to_i}.#{mime.split('/').last.sub('jpeg', 'jpg')}"
-        BACKEND.subir_foto(id, nombre, mime, bytes, p['titulo'])
+        color = datos['color'].to_s.strip
+        BACKEND.subir_foto(id, nombre, mime, bytes, p['titulo'], color.empty? ? nil : color)
         responder(res, 200, 'producto' => BACKEND.producto(id))
       elsif req.request_method == 'POST' && ruta =~ %r{\A/productos/(.+)/tallas\z}
         id = id_de_ruta(Regexp.last_match(1))
