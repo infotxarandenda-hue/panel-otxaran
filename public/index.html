@@ -421,7 +421,7 @@
 
 <script>
 (() => {
-  const ORDEN_TALLAS = ["XXS","XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","3XL","32","34","36","38","40","42","44","46","48","Única"];
+  const ORDEN_TALLAS = ["XXS","XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","3XL","25","26","27","28","29","30","31","32","33","34","36","38","40","42","44","46","48","Única"];
   const TALLAS_RAPIDAS = ["XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","34","36","38","40","42","44","Única"];
   const state = { modo: null, ctx: null, tipos: [], productos: [], ventas: null, view: "resumen",
                   stockTipo: "", prendasEstado: "", drawer: null, pendientes: [] };
@@ -430,6 +430,9 @@
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const euro = n => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(n || 0);
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  // En los pantalones salen también las tallas de cintura 25–33
+  const TALLAS_PANTALON = ["25","26","27","28","29","30","31","32","33"];
+  const tallasRapidas = tipo => tipo === "Pantalones" ? [...TALLAS_PANTALON, ...TALLAS_RAPIDAS] : TALLAS_RAPIDAS;
   const ordenTalla = t => { const i = ORDEN_TALLAS.indexOf(t); return i < 0 ? 999 : i; };
 
   // ---------- API ----------
@@ -717,7 +720,7 @@
   function pintarAddTalla() {
     const p = state.productos.find(x => x.id === state.drawer.id); if (!p) return;
     const tiene = tallasDe(p).map(t => t.toLowerCase());
-    $("#dr-talla-chips").innerHTML = TALLAS_RAPIDAS.filter(t => !tiene.includes(t.toLowerCase()))
+    $("#dr-talla-chips").innerHTML = tallasRapidas(p.tipo).filter(t => !tiene.includes(t.toLowerCase()))
       .map(t => `<button type="button" class="chip ${t === tallaElegida ? "on" : ""}" data-talla="${esc(t)}">${esc(t)}</button>`).join("");
   }
   $("#dr-talla-abrir").addEventListener("click", () => {
@@ -747,7 +750,7 @@
 
   function pintarTallasNuevas() {
     const d = state.drawer;
-    const todas = [...new Set([...TALLAS_RAPIDAS, ...d.tallas])];
+    const todas = [...new Set([...tallasRapidas($("#dr-tipo").value), ...d.tallas])];
     $("#dr-tallas").innerHTML = todas.map(t => `<button type="button" class="chip ${d.tallas.includes(t) ? "on" : ""}" data-talla="${esc(t)}">${esc(t)}</button>`).join("");
     d.tallas.sort((a, b) => ordenTalla(a) - ordenTalla(b));
     $("#dr-stock-in").innerHTML = d.tallas.map(t => `<label class="size-in"><span>${esc(t)}</span><input type="number" min="0" inputmode="numeric" data-talla="${esc(t)}" value="${d.stockNuevo[t] ?? 0}"></label>`).join("");
@@ -850,7 +853,7 @@
     $(s).addEventListener("input", () => autoguardar());
     $(s).addEventListener("blur", () => { if (autoPendiente) autoguardar(true); });
   });
-  $("#dr-tipo").addEventListener("change", () => autoguardar(true));
+  $("#dr-tipo").addEventListener("change", () => { if (state.drawer && !state.drawer.id) pintarTallasNuevas(); else autoguardar(true); });
   window.addEventListener("beforeunload", e => { if (autoPendiente) { e.preventDefault(); e.returnValue = ""; } });
 
   $("#dr-guardar").addEventListener("click", async () => {
