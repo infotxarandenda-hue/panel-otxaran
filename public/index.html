@@ -458,7 +458,7 @@
   // ---------- RESUMEN ----------
   function renderResumen() {
     const ps = state.productos;
-    const activas = ps.filter(p => p.estado === "ACTIVE").length;
+    const activas = ps.filter(p => estadoWeb(p) === "ACTIVE").length;
     const unidades = ps.reduce((s, p) => s + stockTotal(p), 0);
     const agotadas = ps.flatMap(p => p.variantes).filter(v => v.stock === 0).length;
     const v30 = (state.ventas || []).filter(o => Date.now() - new Date(o.fecha) < 30 * 864e5);
@@ -519,7 +519,7 @@
           <td class="prod"><button class="prod-cell" data-editar="${esc(p.id)}">
             ${fotoDe(p) ? `<img src="${esc(fotoDe(p))}" alt="" loading="lazy">` : `<span class="ph"></span>`}
             <span><span class="name">${esc(p.titulo)}${etiqueta ? ` · ${esc(etiqueta)}` : ""}</span>
-            <span class="meta" style="display:block">${esc(skuBase(p))}${p.estado !== "ACTIVE" ? " · borrador" : ""}</span></span>
+            <span class="meta" style="display:block">${esc(skuBase(p))}${estadoWeb(p) !== "ACTIVE" ? " · no está en la web" : ""}</span></span>
           </button></td>
           <td class="num">${euro(precioDe(p))}</td>
           ${tallas.map(t => { const v = vars.find(x => x.opciones.Talla === t);
@@ -575,16 +575,18 @@
   }
 
   // ---------- PRENDAS ----------
+  // «En la web» solo si está activa Y publicada en la tienda online; si no, cuenta como no publicada
+  const estadoWeb = p => p.estado === "ACTIVE" && p.publicada === false ? "SIN_PUBLICAR" : p.estado;
   function renderPrendas() {
     const q = norm($("#prendas-q").value);
     const lista = state.productos
-      .filter(p => !state.prendasEstado || p.estado === state.prendasEstado)
+      .filter(p => !state.prendasEstado || (estadoWeb(p) === "ACTIVE" ? "ACTIVE" : "DRAFT") === state.prendasEstado)
       .filter(p => !q || norm(p.titulo + " " + p.tipo + " " + p.marca).includes(q));
     $("#grid").innerHTML = lista.length ? lista.map(p => {
       const total = stockTotal(p);
       return `<button class="card" data-editar="${esc(p.id)}">
         <div class="img">${fotoDe(p) ? `<img src="${esc(fotoDe(p))}" alt="${esc(p.titulo)}" loading="lazy">` : ""}
-          <span class="badge ${p.estado === "ACTIVE" ? "live" : ""}">${p.estado === "ACTIVE" ? "En la web" : p.estado === "ARCHIVED" ? "Archivada" : "Borrador"}</span></div>
+          <span class="badge ${estadoWeb(p) === "ACTIVE" ? "live" : ""}">${{ ACTIVE: "En la web", ARCHIVED: "Archivada", SIN_PUBLICAR: "Sin publicar" }[estadoWeb(p)] || "Borrador"}</span></div>
         <div class="info"><div class="name">${esc(p.titulo)}</div><div class="price">${euro(precioDe(p))}</div>
           <div class="stockline ${total === 0 ? "alert" : ""}">${total === 0 ? "Sin stock" : `${total} unidades`} · ${p.fotos.length} foto${p.fotos.length === 1 ? "" : "s"}</div></div>
       </button>`; }).join("") : `<div class="empty">No hay prendas que coincidan.</div>`;
@@ -611,7 +613,7 @@
     const b = e.target.closest("[data-estado]"); if (!b) return;
     const d = state.drawer, estado = b.dataset.estado;
     const p = d.id ? state.productos.find(x => x.id === d.id) : null;
-    if (!p || p.estado === estado) return setEstadoDrawer(estado);
+    if (!p || estadoWeb(p) === estado) return setEstadoDrawer(estado);
     if (estado === "ACTIVE") {
       if (!p.fotos.length && !state.pendientes.length && !confirm("Esta prenda no tiene fotos. ¿Ponerla en la web igualmente?")) return;
       if (stockTotal(p) === 0 && !confirm("Esta prenda no tiene stock: saldrá en la web como «Agotado». ¿Ponerla igualmente?")) return;
@@ -631,7 +633,7 @@
   function abrirPrenda(id) {
     const p = id ? state.productos.find(x => x.id === id) : null;
     if (id && !p) return;
-    state.drawer = { id, estado: p ? p.estado : "DRAFT", tallas: p ? tallasDe(p) : ["S", "M", "L", "XL"], stockNuevo: {} };
+    state.drawer = { id, estado: p ? (estadoWeb(p) === "ACTIVE" ? "ACTIVE" : "DRAFT") : "DRAFT", tallas: p ? tallasDe(p) : ["S", "M", "L", "XL"], stockNuevo: {} };
     state.pendientes = [];
     $("#dr-title").textContent = p ? "Editar prenda" : "Nueva prenda";
     $("#dr-tipo").innerHTML = state.tipos.map(t => `<option ${p && p.tipo === t ? "selected" : ""}>${esc(t)}</option>`).join("");
@@ -809,7 +811,7 @@
         if (datos.tipo !== p.tipo) cambios.tipo = datos.tipo;
         if (datos.marca !== p.marca) cambios.marca = datos.marca;
         if (datos.descripcion.trim() !== p.descripcion.trim()) cambios.descripcion = datos.descripcion;
-        if (datos.estado !== p.estado) cambios.estado = datos.estado;
+        if (datos.estado !== estadoWeb(p)) cambios.estado = datos.estado;
         prod = Object.keys(cambios).length ? (await api("/productos/" + encodeURIComponent(p.id), { method: "POST", body: cambios })).producto : p;
       } else {
         prod = (await api("/productos", { method: "POST", body: { ...datos, tallas: d.tallas, stock: d.stockNuevo, sku: siguienteSku() } })).producto;
