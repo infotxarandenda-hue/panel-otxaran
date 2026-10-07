@@ -39,14 +39,18 @@ ABIERTO       = EN_LA_NUBE || ENV['ABIERTO'] == '1'
 MODO          = [TIENDA, CLIENT_ID, CLIENT_SECRET].any?(&:empty?) ? 'demo' : 'shopify'
 
 # Orden de las tallas en la web (las que no están aquí van al final)
-ORDEN_TALLAS = %w[XXS XS XS/S S S/M M M/L L L/XL XL XXL 3XL 25 26 27 28 29 30 31 32 33 34 36 38 40 42 44 46 48 Única].freeze
+ORDEN_TALLAS = %w[XXS XS XS/S S S/M M M/L L L/XL XL XXL 3XL 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 46 48 Única].freeze
 def sufijo_talla(t)
-  t.to_s.upcase.delete(' ').tr('/', '-')
+  t.to_s.upcase.unicode_normalize(:nfd).gsub(/\p{Mn}/, '').delete(' ').tr('/', '-')   # ÚNICA → UNICA
+end
+# Unidades que manda el panel: "talla", "talla|color" o, en un accesorio sin tallas, "diseño"
+def clave_stock(t, c)
+  t && c ? "#{t}|#{c}" : (t || c)
 end
 def sufijo_opcion(v)
   v.to_s.upcase.unicode_normalize(:nfd).gsub(/[^A-Z0-9]/, '')
 end
-TIPOS = ['Camisas y tops', 'Chaquetas y abrigos', 'Punto', 'Pantalones', 'Faldas', 'Accesorios'].freeze
+TIPOS = ['Camisas y tops', 'Chaquetas y abrigos', 'Punto', 'Pantalones', 'Faldas', 'Zapatos', 'Accesorios'].freeze
 
 # ---------- textos: descripción en texto plano <-> HTML de Shopify ----------
 def texto_a_html(texto)
@@ -218,20 +222,24 @@ module Shopify
     loc = contexto['ubicacion']['id']
     tallas = datos['tallas']
     colores = datos['colores'] || []
-    opciones = [{ name: 'Talla', values: tallas.map { |t| { name: t } } }]
-    opciones << { name: 'Color', values: colores.map { |c| { name: c } } } if colores.any?
-    # Con colores: una variante por talla y color; las unidades llegan como "talla|color"
-    combos = colores.any? ? tallas.product(colores) : tallas.map { |t| [t, nil] }
+    nombre2 = datos['tipo'] == 'Accesorios' ? 'Diseño' : 'Color'
+    opciones = []
+    opciones << { name: 'Talla', values: tallas.map { |t| { name: t } } } if tallas.any?
+    opciones << { name: nombre2, values: colores.map { |c| { name: c } } } if colores.any?
+    # Con colores: una variante por talla y color; las unidades llegan como "talla|color" (o solo "diseño")
+    combos = if colores.any? then tallas.any? ? tallas.product(colores) : colores.map { |c| [nil, c] }
+             else tallas.map { |t| [t, nil] } end
     input = {
       title: datos['titulo'], descriptionHtml: texto_a_html(datos['descripcion']), vendor: datos['marca'],
       productType: datos['tipo'], tags: datos['etiquetas'], status: datos['estado'],
       productOptions: opciones,
       variants: combos.map do |t, c|
-        valores = [{ optionName: 'Talla', name: t }]
-        valores << { optionName: 'Color', name: c } if c
+        valores = []
+        valores << { optionName: 'Talla', name: t } if t
+        valores << { optionName: nombre2, name: c } if c
         { optionValues: valores, price: format('%.2f', datos['precio']),
-          sku: [datos['sku'], sufijo_talla(t), (sufijo_opcion(c) if c)].compact.join('-'), inventoryItem: { tracked: true },   # OTX-35-XS-S-ROJO
-          inventoryQuantities: [{ locationId: loc, name: 'available', quantity: datos['stock'][c ? "#{t}|#{c}" : t].to_i }] }
+          sku: [datos['sku'], (sufijo_talla(t) if t), (sufijo_opcion(c) if c)].compact.join('-'), inventoryItem: { tracked: true },   # OTX-35-XS-S-ROJO
+          inventoryQuantities: [{ locationId: loc, name: 'available', quantity: datos['stock'][clave_stock(t, c)].to_i }] }
       end
     }
     r = ok!(gql('mutation crear($input: ProductSetInput!) { productSet(input: $input, synchronous: true) { product { id } userErrors { field message } } }',
@@ -321,7 +329,7 @@ module Shopify
     variantes = gql('query v($id: ID!) { product(id: $id) { variants(first: 100) { nodes { id selectedOptions { name value } media(first: 1) { nodes { id } } } } } }',
                     id: id)['product']['variants']['nodes']
     sin_foto = variantes.select do |v|
-      v['selectedOptions'].any? { |o| o['name'] =~ /color|colour|kolore/i && o['value'].casecmp?(color) } && v['media']['nodes'].empty?
+      v['selectedOptions'].any? { |o| o['name'] =~ /color|colour|kolore|diseño|diseno/i && o['value'].casecmp?(color) } && v['media']['nodes'].empty?
     end
     return if sin_foto.empty?   # ese color ya tiene su foto principal
     # Shopify procesa la foto unos segundos; hasta que está lista no se puede asignar
@@ -380,19 +388,23 @@ module Demo
   end
 
   def self.crear(datos)
+    nombre2 = datos['tipo'] == 'Accesorios' ? 'Diseño' : 'Color'
+    colores = datos['colores'] || []
+    combos = if colores.any? then datos['tallas'].any? ? datos['tallas'].product(colores) : colores.map { |c| [nil, c] }
+             else datos['tallas'].map { |t| [t, nil] } end
     @mutex.synchronize do
       id = "demo/Product/#{Time.now.to_f}"
       @productos.unshift(
         'id' => id, 'handle' => '', 'titulo' => datos['titulo'], 'estado' => datos['estado'], 'tipo' => datos['tipo'],
         'marca' => datos['marca'], 'etiquetas' => datos['etiquetas'], 'descripcion' => datos['descripcion'].to_s, 'url' => nil,
         'fotos' => [],
-        'opciones' => [{ 'nombre' => 'Talla', 'valores' => datos['tallas'] }] +
-                      ((datos['colores'] || []).any? ? [{ 'nombre' => 'Color', 'valores' => datos['colores'] }] : []),
-        'variantes' => ((datos['colores'] || []).any? ? datos['tallas'].product(datos['colores']) : datos['tallas'].map { |t| [t, nil] }).map.with_index do |(t, c), i|
+        'opciones' => (datos['tallas'].any? ? [{ 'nombre' => 'Talla', 'valores' => datos['tallas'] }] : []) +
+                      ((datos['colores'] || []).any? ? [{ 'nombre' => nombre2, 'valores' => datos['colores'] }] : []),
+        'variantes' => combos.map.with_index do |(t, c), i|
           { 'id' => "#{id}/v#{i}", 'titulo' => [t, c].compact.join(' / '),
-            'sku' => [datos['sku'], sufijo_talla(t), (sufijo_opcion(c) if c)].compact.join('-'), 'precio' => datos['precio'].to_f,
-            'opciones' => c ? { 'Talla' => t, 'Color' => c } : { 'Talla' => t }, 'item' => "#{id}/i#{i}",
-            'stock' => datos['stock'][c ? "#{t}|#{c}" : t].to_i }
+            'sku' => [datos['sku'], (sufijo_talla(t) if t), (sufijo_opcion(c) if c)].compact.join('-'), 'precio' => datos['precio'].to_f,
+            'opciones' => { 'Talla' => t, nombre2 => c }.compact, 'item' => "#{id}/i#{i}",
+            'stock' => datos['stock'][clave_stock(t, c)].to_i }
         end
       )
       id
@@ -461,9 +473,12 @@ def validar_producto!(d, nuevo)
   raise ErrorPanel.new('Estado no válido') if (nuevo || d.key?('estado')) && !%w[ACTIVE DRAFT ARCHIVED].include?(d['estado'])
   if nuevo
     d['tallas'] = Array(d['tallas']).map(&:to_s).map(&:strip).reject(&:empty?).uniq
-    raise ErrorPanel.new('Elige al menos una talla') if d['tallas'].empty?
     d['stock'] = (d['stock'] || {}).map { |k, v| [k, [v.to_i, 0].max] }.to_h
     d['colores'] = Array(d['colores']).map { |c| c.to_s.strip }.reject(&:empty?).uniq { |c| c.downcase }
+    if d['tallas'].empty?
+      raise ErrorPanel.new('Elige al menos una talla') unless d['tipo'] == 'Accesorios'
+      d['tallas'] = ['Única'] if d['colores'].empty?   # accesorio de un solo diseño
+    end
     raise ErrorPanel.new('Como mucho 12 colores por prenda') if d['colores'].size > 12
     raise ErrorPanel.new('El nombre de un color es demasiado largo') if d['colores'].any? { |c| c.length > 30 }
     d['marca'] = d['marca'].to_s.strip.empty? ? 'Otxaran' : d['marca'].strip
