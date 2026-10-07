@@ -81,6 +81,7 @@
   .view.active{display:block;}
 
   /* ---------- títulos ---------- */
+  .nuevos{display:flex;gap:8px;flex-wrap:wrap;}
   .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:44px 0 28px;}
   .eyebrow{font-size:12px;letter-spacing:0.14em;text-transform:uppercase;opacity:0.55;margin-bottom:10px;}
   h1{font-size:clamp(28px,4vw,40px);font-weight:500;letter-spacing:0.02em;}
@@ -313,7 +314,11 @@
   <section class="view" id="view-prendas">
     <div class="page-head">
       <div><div class="eyebrow">Fotos, precios y textos de la web</div><h1>Prendas</h1></div>
-      <button class="btn" id="nueva">+ Nueva prenda</button>
+      <div class="nuevos">
+        <button class="btn" id="nueva">+ Nueva prenda</button>
+        <button class="btn ghost" id="nuevo-zapato">+ Zapatos</button>
+        <button class="btn ghost" id="nuevo-accesorio">+ Accesorio</button>
+      </div>
     </div>
     <div class="toolbar">
       <input class="search" id="prendas-q" type="search" placeholder="Buscar prenda" aria-label="Buscar prenda">
@@ -371,7 +376,7 @@
     <div class="field"><label for="dr-nombre">Nombre</label><input type="text" id="dr-nombre" autocomplete="off"></div>
     <div class="row2">
       <div class="field"><label for="dr-precio">Precio (€, IVA incluido)</label><input type="text" id="dr-precio" inputmode="decimal" autocomplete="off"></div>
-      <div class="field"><label for="dr-tipo">Tipo</label><select id="dr-tipo"></select></div>
+      <div class="field" id="dr-tipo-campo"><label for="dr-tipo">Tipo</label><select id="dr-tipo"></select></div>
     </div>
     <div class="field"><label for="dr-marca">Marca</label><input type="text" id="dr-marca" autocomplete="off"></div>
     <div class="field">
@@ -389,15 +394,15 @@
     </div>
     <!-- solo al crear -->
     <div id="dr-nueva-tallas" hidden>
-      <div class="field">
+      <div class="field" id="dr-tallas-campo">
         <span class="lbl">Tallas</span>
         <div class="chips" id="dr-tallas"></div>
         <div class="hint">Toca para elegir. ¿Otra talla? Escríbela y pulsa Enter: <input type="text" id="dr-talla-extra" style="border:none;border-bottom:1px solid var(--line);width:70px;outline:none;font-size:13px"></div>
       </div>
       <div class="field">
-        <span class="lbl">Colores <span class="opc">(opcional)</span></span>
+        <span class="lbl"><span id="dr-colores-lbl">Colores</span> <span class="opc">(opcional)</span></span>
         <div class="chips" id="dr-colores"></div>
-        <div class="hint">¿La misma prenda en varios colores? Escribe un color y pulsa Enter: <input type="text" id="dr-color-nuevo" maxlength="30" autocomplete="off" placeholder="p. ej. Negro" style="border:none;border-bottom:1px solid var(--line);width:120px;outline:none;font-size:13px"><br>Cada color tendrá sus unidades y sus fotos. Si la prenda es de un solo color, déjalo vacío.</div>
+        <div class="hint"><span id="dr-colores-pregunta">¿La misma prenda en varios colores? Escribe un color y pulsa Enter:</span> <input type="text" id="dr-color-nuevo" maxlength="30" autocomplete="off" placeholder="p. ej. Negro" style="border:none;border-bottom:1px solid var(--line);width:120px;outline:none;font-size:13px"><br><span id="dr-colores-ayuda">Cada color tendrá sus unidades y sus fotos. Si la prenda es de un solo color, déjalo vacío.</span></div>
       </div>
       <div class="field">
         <span class="lbl" id="dr-stock-lbl">Unidades por talla</span>
@@ -434,7 +439,7 @@
 
 <script>
 (() => {
-  const ORDEN_TALLAS = ["XXS","XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","3XL","25","26","27","28","29","30","31","32","33","34","36","38","40","42","44","46","48","Única"];
+  const ORDEN_TALLAS = ["XXS","XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","3XL","25","26","27","28","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","48","Única"];
   const TALLAS_RAPIDAS = ["XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","34","36","38","40","42","44","Única"];
   const state = { modo: null, ctx: null, tipos: [], productos: [], ventas: null, view: "resumen",
                   stockTipo: "", prendasEstado: "", drawer: null, pendientes: [] };
@@ -445,7 +450,15 @@
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   // En los pantalones salen también las tallas de cintura 25–33
   const TALLAS_PANTALON = ["25","26","27","28","29","30","31","32","33"];
-  const tallasRapidas = tipo => tipo === "Pantalones" ? [...TALLAS_PANTALON, ...TALLAS_RAPIDAS] : TALLAS_RAPIDAS;
+  const TALLAS_ZAPATO = ["35","36","37","38","39","40","41","42"];
+  const tallasRapidas = tipo => tipo === "Zapatos" ? TALLAS_ZAPATO : tipo === "Pantalones" ? [...TALLAS_PANTALON, ...TALLAS_RAPIDAS] : TALLAS_RAPIDAS;
+  // Tres tipos de alta: prenda, zapatos (van a Prendas en la web) y accesorio (va a Accesorios, sin tallas y con diseños)
+  const modoDe = p => p.tipo === "Accesorios" ? "accesorio" : p.tipo === "Zapatos" ? "zapatos" : "prenda";
+  const TEXTOS = {
+    prenda:    { nueva: "Nueva prenda", editar: "Editar prenda", crear: "Crear prenda", tallas: ["S", "M", "L", "XL"] },
+    zapatos:   { nueva: "Nuevos zapatos", editar: "Editar zapatos", crear: "Crear zapatos", tipo: "Zapatos", tallas: ["37", "38", "39", "40"] },
+    accesorio: { nueva: "Nuevo accesorio", editar: "Editar accesorio", crear: "Crear accesorio", tipo: "Accesorios", tallas: [] },
+  };
   const ordenTalla = t => { const i = ORDEN_TALLAS.indexOf(t); return i < 0 ? 999 : i; };
 
   // ---------- API ----------
@@ -477,7 +490,7 @@
   const stockTotal = p => p.variantes.reduce((s, v) => s + v.stock, 0);
   const skuBase = p => { const s = p.variantes[0]?.sku || ""; return (s.match(/^[A-Z]+-\d+/) || [s])[0]; };
   const tallasDe = p => (p.opciones.find(o => o.nombre === "Talla")?.valores) || [];
-  const coloresDe = p => (p.opciones.find(o => /^(color|colour|kolorea)$/i.test(o.nombre))?.valores) || [];
+  const coloresDe = p => (p.opciones.find(o => /^(color|colour|kolorea|diseño|diseno)$/i.test(o.nombre))?.valores) || [];
   // filas de stock: una por prenda, o una por color si la prenda tiene colores
   function filasStock(p) {
     const color = p.opciones.find(o => o.nombre === "Color");
@@ -646,7 +659,9 @@
     $$("#prendas-estado .chip").forEach(x => x.classList.toggle("on", x === c)); renderPrendas();
   });
   $("#grid").addEventListener("click", e => { const c = e.target.closest("[data-editar]"); if (c) abrirPrenda(c.dataset.editar); });
-  $("#nueva").addEventListener("click", () => abrirPrenda(null));
+  $("#nueva").addEventListener("click", () => abrirPrenda(null, "prenda"));
+  $("#nuevo-zapato").addEventListener("click", () => abrirPrenda(null, "zapatos"));
+  $("#nuevo-accesorio").addEventListener("click", () => abrirPrenda(null, "accesorio"));
 
   // panel lateral
   function setEstadoDrawer(estado) {
@@ -678,13 +693,17 @@
     } finally { botones.forEach(x => x.disabled = false); }
   });
 
-  function abrirPrenda(id) {
+  function abrirPrenda(id, modoNuevo = "prenda") {
     const p = id ? state.productos.find(x => x.id === id) : null;
     if (id && !p) return;
-    state.drawer = { id, estado: p ? (estadoWeb(p) === "ACTIVE" ? "ACTIVE" : "DRAFT") : "DRAFT", tallas: p ? tallasDe(p) : ["S", "M", "L", "XL"], stockNuevo: {}, colores: [] };
+    const modo = p ? modoDe(p) : modoNuevo, tx = TEXTOS[modo];
+    state.drawer = { id, estado: p ? (estadoWeb(p) === "ACTIVE" ? "ACTIVE" : "DRAFT") : "DRAFT", tallas: p ? tallasDe(p) : [...tx.tallas], stockNuevo: {}, colores: [], modo };
     state.pendientes = []; state.colorFoto = ""; $("#dr-color-nuevo").value = "";
-    $("#dr-title").textContent = p ? "Editar prenda" : "Nueva prenda";
-    $("#dr-tipo").innerHTML = state.tipos.map(t => `<option ${p && p.tipo === t ? "selected" : ""}>${esc(t)}</option>`).join("");
+    $("#dr-title").textContent = p ? tx.editar : tx.nueva;
+    // en una prenda nueva no se ofrecen «Zapatos» ni «Accesorios» (tienen su propio botón)
+    const tipos = !p && modo === "prenda" ? state.tipos.filter(t => !["Zapatos", "Accesorios"].includes(t)) : state.tipos;
+    $("#dr-tipo").innerHTML = tipos.map(t => `<option ${(p ? p.tipo : tx.tipo) === t ? "selected" : ""}>${esc(t)}</option>`).join("");
+    $("#dr-tipo-campo").hidden = !p && modo !== "prenda";
     $("#dr-nombre").value = p ? p.titulo : "";
     $("#dr-precio").value = p ? String(precioDe(p)).replace(".", ",") : "";
     $("#dr-marca").value = p ? p.marca : "Otxaran";
@@ -692,7 +711,7 @@
     setEstadoDrawer(state.drawer.estado);
     clearTimeout(autoTimer); autoPendiente = false;
     pintarAuto(p ? "Los cambios se guardan solos en Shopify y en la web." : "");
-    $("#dr-guardar").textContent = p ? "Hecho" : "Crear prenda";
+    $("#dr-guardar").textContent = p ? "Hecho" : tx.crear;
     $("#dr-nueva-tallas").hidden = !!p;
     $("#dr-stock-box").hidden = !p;
     const admin = state.ctx.admin && p ? `${state.ctx.admin}/products/${p.id.split("/").pop()}` : "";
@@ -753,7 +772,7 @@
 
   // «+ Añadir talla» en una prenda que ya existe: se crea en Shopify (web y TPV) con sus unidades
   let tallaElegida = "";
-  function cerrarAddTalla() { $("#dr-talla-form").hidden = true; $("#dr-talla-abrir").hidden = false; tallaElegida = ""; }
+  function cerrarAddTalla() { $("#dr-talla-form").hidden = true; $("#dr-talla-abrir").hidden = !!state.drawer && state.drawer.modo === "accesorio"; tallaElegida = ""; }
   function pintarAddTalla() {
     const p = state.productos.find(x => x.id === state.drawer.id); if (!p) return;
     const tiene = tallasDe(p).map(t => t.toLowerCase());
@@ -790,6 +809,19 @@
     const todas = [...new Set([...tallasRapidas($("#dr-tipo").value), ...d.tallas])];
     $("#dr-tallas").innerHTML = todas.map(t => `<button type="button" class="chip ${d.tallas.includes(t) ? "on" : ""}" data-talla="${esc(t)}">${esc(t)}</button>`).join("");
     d.tallas.sort((a, b) => ordenTalla(a) - ordenTalla(b));
+    const acc = d.modo === "accesorio";
+    $("#dr-tallas-campo").hidden = acc;
+    $("#dr-colores-lbl").textContent = acc ? "Diseños" : "Colores";
+    $("#dr-colores-pregunta").textContent = acc ? "¿Varios diseños? Escribe cada uno y pulsa Enter:" : "¿La misma prenda en varios colores? Escribe un color y pulsa Enter:";
+    $("#dr-color-nuevo").placeholder = acc ? "p. ej. Flores" : "p. ej. Negro";
+    $("#dr-colores-ayuda").textContent = acc ? "Cada diseño tendrá sus unidades y sus fotos. Si solo hay uno, déjalo vacío." : "Cada color tendrá sus unidades y sus fotos. Si la prenda es de un solo color, déjalo vacío.";
+    if (acc) {
+      $("#dr-stock-lbl").textContent = d.colores.length ? "Unidades por diseño" : "Unidades";
+      const uno = (k, nombre) => `<label class="size-in"><span>${esc(nombre)}</span><input type="number" min="0" inputmode="numeric" data-clave="${esc(k)}" value="${d.stockNuevo[k] ?? 0}"></label>`;
+      $("#dr-stock-in").innerHTML = `<div class="size-grid">${d.colores.length ? d.colores.map(c => uno(c, c)).join("") : uno("Única", "Unidades")}</div>`;
+      $("#dr-colores").innerHTML = d.colores.map(c => `<button type="button" class="chip on" data-quitar-color="${esc(c)}" title="Quitar ${esc(c)}">${esc(c)}<span class="quitar">✕</span></button>`).join("");
+      return;
+    }
     $("#dr-colores").innerHTML = d.colores.map(c => `<button type="button" class="chip on" data-quitar-color="${esc(c)}" title="Quitar ${esc(c)}">${esc(c)}<span class="quitar">✕</span></button>`).join("");
     $("#dr-stock-lbl").textContent = d.colores.length ? "Unidades por talla y color" : "Unidades por talla";
     const celda = (t, c) => { const k = c ? `${t}|${c}` : t;
@@ -819,7 +851,9 @@
     d.tallas = d.tallas.includes(t) ? d.tallas.filter(x => x !== t) : [...d.tallas, t];
     pintarTallasNuevas();
   });
-  $("#dr-stock-in").addEventListener("input", e => { const i = e.target.closest("[data-talla]"); if (!i) return;
+  $("#dr-stock-in").addEventListener("input", e => {
+    const a = e.target.closest("[data-clave]"); if (a) { state.drawer.stockNuevo[a.dataset.clave] = parseInt(a.value, 10) || 0; return; }
+    const i = e.target.closest("[data-talla]"); if (!i) return;
     const k = i.dataset.color ? `${i.dataset.talla}|${i.dataset.color}` : i.dataset.talla;
     state.drawer.stockNuevo[k] = parseInt(i.value, 10) || 0; });
   $("#dr-talla-extra").addEventListener("keydown", e => {
@@ -926,7 +960,7 @@
     };
     if (!datos.titulo) return toast("Ponle un nombre a la prenda.", true);
     if (!(parseFloat(datos.precio.replace(",", ".")) > 0)) return toast("Escribe un precio válido, por ejemplo 49,95.", true);
-    if (!p && !d.tallas.length) return toast("Elige al menos una talla.", true);
+    if (!p && !d.tallas.length && d.modo !== "accesorio") return toast("Elige al menos una talla.", true);
     if (d.estado === "ACTIVE" && !(p ? p.fotos.length : 0) && !state.pendientes.length) {
       if (!confirm("Esta prenda no tiene fotos. ¿Ponerla en la web igualmente?")) return;
     }
@@ -943,7 +977,7 @@
         if (datos.estado !== estadoWeb(p)) cambios.estado = datos.estado;
         prod = Object.keys(cambios).length ? (await api("/productos/" + encodeURIComponent(p.id), { method: "POST", body: cambios })).producto : p;
       } else {
-        prod = (await api("/productos", { method: "POST", body: { ...datos, tallas: d.tallas, colores: d.colores, stock: d.stockNuevo, sku: siguienteSku() } })).producto;
+        prod = (await api("/productos", { method: "POST", body: { ...datos, tallas: d.modo === "accesorio" ? [] : d.tallas, colores: d.colores, stock: d.stockNuevo, sku: siguienteSku() } })).producto;
         state.pendientes.sort((a, b) => ["", ...d.colores].indexOf(a.color || "") - ["", ...d.colores].indexOf(b.color || ""));
       }
       reemplazar(prod);
@@ -962,7 +996,7 @@
     } catch (e) {
       toast(e.message, true);
       if (state.drawer) { pintarFotos(); $("#dr-title").textContent = d.id ? "Editar prenda" : "Nueva prenda"; }
-    } finally { btn.disabled = false; btn.textContent = d.id ? "Hecho" : "Crear prenda"; }
+    } finally { btn.disabled = false; btn.textContent = d.id ? "Hecho" : TEXTOS[d.modo].crear; }
   });
   function reemplazar(prod) {
     const i = state.productos.findIndex(x => x.id === prod.id);
