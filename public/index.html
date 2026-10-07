@@ -65,6 +65,12 @@
   .estado a:hover{opacity:1;}
   .instalar{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;border:1px solid var(--ink);padding:7px 12px;background:none;cursor:pointer;}
   .instalar:hover{background:var(--ink);color:#fff;}
+  .add-talla-abrir{margin-top:14px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;text-decoration:underline;text-underline-offset:3px;background:none;border:0;padding:0;cursor:pointer;}
+  .add-talla{margin-top:14px;padding:16px;border:1px solid var(--line);display:grid;gap:14px;}
+  .add-talla-fila{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+  .add-talla-fila label{display:grid;gap:6px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;}
+  .add-talla-fila input{width:110px;border:0;border-bottom:1px solid var(--line);padding:6px 0;font-size:15px;outline:none;background:none;}
+  .add-talla-fila .btn{flex:1;min-width:120px;}
 
   .banner-demo{
     margin:0 4vw 0;padding:12px 16px;border:1px solid var(--warn);background:var(--warn-bg);color:var(--warn);
@@ -390,6 +396,18 @@
       <span class="lbl">Stock por talla</span>
       <div class="stock-summary" id="dr-stock"></div>
       <div class="hint">Toca una talla para cambiar las unidades.</div>
+      <button type="button" class="add-talla-abrir" id="dr-talla-abrir">+ Añadir talla</button>
+      <div class="add-talla" id="dr-talla-form" hidden>
+        <div class="chips" id="dr-talla-chips"></div>
+        <div class="add-talla-fila">
+          <label>Otra <input type="text" id="dr-talla-otra" maxlength="12" autocomplete="off" placeholder="p. ej. 46"></label>
+          <label>Unidades <input type="number" id="dr-talla-uds" min="0" inputmode="numeric" value="1"></label>
+        </div>
+        <div class="add-talla-fila">
+          <button type="button" class="btn ghost" id="dr-talla-cancelar">Cancelar</button>
+          <button type="button" class="btn" id="dr-talla-ok">Añadir talla</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="drawer-foot">
@@ -664,6 +682,7 @@
     $("#dr-admin").hidden = !admin; $("#dr-admin").href = admin || "#";
     pintarFotos();
     if (p) pintarStockDrawer(); else pintarTallasNuevas();
+    cerrarAddTalla();
     $("#drawer").hidden = false; $("#drawer-bg").hidden = false;
     $("#dr-nombre").focus();
   }
@@ -691,6 +710,40 @@
     $("#dr-stock").innerHTML = p.variantes.map(v => `<button class="pill ${v.stock === 0 ? "zero" : v.stock === 1 ? "low" : ""}" data-stock="${esc(v.item)}" style="padding:0 12px">${esc(v.titulo)} · ${v.stock}</button>`).join("");
   }
   $("#dr-stock").addEventListener("click", e => { const b = e.target.closest("[data-stock]"); if (b) abrirStock(b.dataset.stock); });
+
+  // «+ Añadir talla» en una prenda que ya existe: se crea en Shopify (web y TPV) con sus unidades
+  let tallaElegida = "";
+  function cerrarAddTalla() { $("#dr-talla-form").hidden = true; $("#dr-talla-abrir").hidden = false; tallaElegida = ""; }
+  function pintarAddTalla() {
+    const p = state.productos.find(x => x.id === state.drawer.id); if (!p) return;
+    const tiene = tallasDe(p).map(t => t.toLowerCase());
+    $("#dr-talla-chips").innerHTML = TALLAS_RAPIDAS.filter(t => !tiene.includes(t.toLowerCase()))
+      .map(t => `<button type="button" class="chip ${t === tallaElegida ? "on" : ""}" data-talla="${esc(t)}">${esc(t)}</button>`).join("");
+  }
+  $("#dr-talla-abrir").addEventListener("click", () => {
+    tallaElegida = ""; $("#dr-talla-otra").value = ""; $("#dr-talla-uds").value = "1";
+    pintarAddTalla(); $("#dr-talla-form").hidden = false; $("#dr-talla-abrir").hidden = true;
+  });
+  $("#dr-talla-cancelar").addEventListener("click", cerrarAddTalla);
+  $("#dr-talla-chips").addEventListener("click", e => {
+    const b = e.target.closest("[data-talla]"); if (!b) return;
+    tallaElegida = tallaElegida === b.dataset.talla ? "" : b.dataset.talla; $("#dr-talla-otra").value = ""; pintarAddTalla();
+  });
+  $("#dr-talla-otra").addEventListener("input", () => { if (tallaElegida) { tallaElegida = ""; pintarAddTalla(); } });
+  $("#dr-talla-ok").addEventListener("click", async () => {
+    const d = state.drawer; if (!d || !d.id) return;
+    const talla = tallaElegida || $("#dr-talla-otra").value.trim().toUpperCase();
+    const cantidad = parseInt($("#dr-talla-uds").value, 10);
+    if (!talla) return toast("Elige una talla o escribe otra.", true);
+    if (!(cantidad >= 0)) return toast("Escribe las unidades (0 o más).", true);
+    const btn = $("#dr-talla-ok"); btn.disabled = true; btn.textContent = "Añadiendo…";
+    try {
+      const prod = (await api(`/productos/${encodeURIComponent(d.id)}/tallas`, { method: "POST", body: { talla, cantidad } })).producto;
+      reemplazar(prod); pintarStockDrawer(); render(); cerrarAddTalla();
+      toast(state.modo === "demo" ? `Talla ${talla} añadida en el panel (modo demo).` : `Talla ${talla} añadida con ${cantidad} unidad${cantidad === 1 ? "" : "es"}. Ya sale en la web.`);
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; btn.textContent = "Añadir talla"; }
+  });
 
   function pintarTallasNuevas() {
     const d = state.drawer;
