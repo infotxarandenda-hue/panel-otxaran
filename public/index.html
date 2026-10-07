@@ -403,8 +403,8 @@
 
 <script>
 (() => {
-  const ORDEN_TALLAS = ["XXS","XS","S","M","L","XL","XXL","3XL","32","34","36","38","40","42","44","46","48","Única"];
-  const TALLAS_RAPIDAS = ["XS","S","M","L","XL","XXL","34","36","38","40","42","44","Única"];
+  const ORDEN_TALLAS = ["XXS","XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","3XL","32","34","36","38","40","42","44","46","48","Única"];
+  const TALLAS_RAPIDAS = ["XS","XS/S","S","S/M","M","M/L","L","L/XL","XL","XXL","34","36","38","40","42","44","Única"];
   const state = { modo: null, ctx: null, tipos: [], productos: [], ventas: null, view: "resumen",
                   stockTipo: "", prendasEstado: "", drawer: null, pendientes: [] };
   const $ = (s, r = document) => r.querySelector(s);
