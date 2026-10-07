@@ -39,7 +39,7 @@ ABIERTO       = EN_LA_NUBE || ENV['ABIERTO'] == '1'
 MODO          = [TIENDA, CLIENT_ID, CLIENT_SECRET].any?(&:empty?) ? 'demo' : 'shopify'
 
 # Orden de las tallas en la web (las que no están aquí van al final)
-ORDEN_TALLAS = %w[XXS XS XS/S S S/M M M/L L L/XL XL XXL 3XL 32 34 36 38 40 42 44 46 48 Única].freeze
+ORDEN_TALLAS = %w[XXS XS XS/S S S/M M M/L L L/XL XL XXL 3XL 25 26 27 28 29 30 31 32 33 34 36 38 40 42 44 46 48 Única].freeze
 def sufijo_talla(t)
   t.to_s.upcase.delete(' ').tr('/', '-')
 end
