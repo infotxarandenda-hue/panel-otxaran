@@ -11,6 +11,7 @@ require 'net/http'
 require 'json'
 require 'uri'
 require 'cgi'
+require 'securerandom'
 
 Encoding.default_external = Encoding::UTF_8 # tildes y eñes aunque el Mac no tenga el idioma configurado
 DIR = File.expand_path(__dir__)
@@ -178,16 +179,17 @@ module Shopify
   end
 
   M_STOCK = <<~Q
-    mutation stock($input: InventorySetQuantitiesInput!) { inventorySetQuantities(input: $input) {
+    mutation stock($input: InventorySetQuantitiesInput!, $clave: String!) { inventorySetQuantities(input: $input) @idempotent(key: $clave) {
       inventoryAdjustmentGroup { changes { name delta quantityAfterChange } } userErrors { field message code } } }
   Q
 
+  # Shopify exige una clave única por cambio de stock (@idempotent) para no aplicarlo dos veces.
   # changeFromQuantity = lo que el panel creía que había: si entretanto hubo una venta, Shopify no pisa el dato
   def self.poner_stock(item, cantidad, anterior)
     r = gql(M_STOCK, input: {
       name: 'available', reason: 'correction', referenceDocumentUri: 'gid://otxaran-panel/Stock/manual',
       quantities: [{ inventoryItemId: item, locationId: contexto['ubicacion']['id'], quantity: cantidad, changeFromQuantity: anterior }]
-    })['inventorySetQuantities']
+    }, clave: SecureRandom.uuid)['inventorySetQuantities']
     errores = r['userErrors'] || []
     if errores.any? { |e| e['code'].to_s =~ /STALE/ }
       raise ErrorPanel.new('El stock de esta talla ha cambiado mientras tanto (quizá una venta). He recargado los datos: vuelve a mirarlo.', 409)
