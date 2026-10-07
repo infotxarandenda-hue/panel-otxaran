@@ -38,6 +38,14 @@ CLAVE         = ENV['CLAVE_PANEL'].to_s
 ABIERTO       = EN_LA_NUBE || ENV['ABIERTO'] == '1'
 MODO          = [TIENDA, CLIENT_ID, CLIENT_SECRET].any?(&:empty?) ? 'demo' : 'shopify'
 
+# Orden de las tallas en la web (las que no están aquí van al final)
+ORDEN_TALLAS = %w[XXS XS XS/S S S/M M M/L L L/XL XL XXL 3XL 32 34 36 38 40 42 44 46 48 Única].freeze
+def sufijo_talla(t)
+  t.to_s.upcase.delete(' ').tr('/', '-')
+end
+def sufijo_opcion(v)
+  v.to_s.upcase.unicode_normalize(:nfd).gsub(/[^A-Z0-9]/, '')
+end
 TIPOS = ['Camisas y tops', 'Chaquetas y abrigos', 'Punto', 'Pantalones', 'Faldas', 'Accesorios'].freeze
 
 # ---------- textos: descripción en texto plano <-> HTML de Shopify ----------
@@ -263,6 +271,30 @@ module Shopify
     end
   end
 
+  # Añade una talla a una prenda que ya existe (con sus unidades) y la deja en su sitio: XS · XS/S · S · S/M…
+  def self.anadir_talla(id, talla, cantidad)
+    loc = contexto['ubicacion']['id']
+    p = gql('query p($id: ID!) { product(id: $id) { options { name values } variants(first: 100) { nodes { sku price selectedOptions { name value } } } } }', id: id)['product']
+    opcion = p['options'].find { |o| o['name'] =~ /talla|size|neurria/i } || p['options'].first
+    raise ErrorPanel.new("La talla #{talla} ya existe en esta prenda") if opcion['values'].any? { |v| v.casecmp?(talla) }
+    otra = (p['options'] - [opcion]).first   # p. ej. Color en el chaleco: la talla nueva se crea en todos los colores
+    combos = otra ? otra['values'].map { |v| [otra['name'], v] } : [nil]
+    base = p['variants']['nodes'].first
+    prefijo = base['sku'].to_s[/\A[A-Z]+-\d+/] || 'OTX'
+    variantes = combos.map do |extra|
+      { optionValues: [{ optionName: opcion['name'], name: talla }] + (extra ? [{ optionName: extra[0], name: extra[1] }] : []),
+        price: base['price'],
+        inventoryItem: { sku: [prefijo, sufijo_talla(talla), (sufijo_opcion(extra[1]) if extra)].compact.join('-'), tracked: true },
+        inventoryQuantities: [{ locationId: loc, availableQuantity: extra ? 0 : cantidad }] }
+    end
+    ok!(gql('mutation c($productId: ID!, $variants: [ProductVariantsBulkInput!]!) { productVariantsBulkCreate(productId: $productId, variants: $variants) { productVariants { id } userErrors { field message } } }',
+            productId: id, variants: variantes)['productVariantsBulkCreate'])
+    orden = (opcion['values'] + [talla]).each_with_index.sort_by { |t, i| [ORDEN_TALLAS.index(t) || 999, i] }.map(&:first)
+    ok!(gql('mutation r($productId: ID!, $options: [OptionReorderInput!]!) { productOptionsReorder(productId: $productId, options: $options) { userErrors { field message } } }',
+            productId: id, options: [{ name: opcion['name'], values: orden.map { |v| { name: v } } }])['productOptionsReorder'])
+    id
+  end
+
   def self.subir_foto(id, nombre, mime, bytes, alt)
     destino = ok!(gql('mutation subida($input: [StagedUploadInput!]!) { stagedUploadsCreate(input: $input) { stagedTargets { url resourceUrl } userErrors { field message } } }',
                       input: [{ resource: 'IMAGE', filename: nombre, mimeType: mime, httpMethod: 'PUT' }])['stagedUploadsCreate'])['stagedTargets'].first
@@ -343,6 +375,21 @@ module Demo
         p[campo] = datos[k] if datos.key?(k)
       end
       p['variantes'].each { |v| v['precio'] = datos['precio'].to_f } if datos.key?('precio')
+    end
+    id
+  end
+
+  def self.anadir_talla(id, talla, cantidad)
+    @mutex.synchronize do
+      p = producto(id)
+      raise ErrorPanel.new("La talla #{talla} ya existe en esta prenda") if p['variantes'].any? { |v| v['titulo'].casecmp?(talla) }
+      base = p['variantes'].first
+      p['variantes'] << { 'id' => "#{id}/v#{p['variantes'].size}", 'titulo' => talla,
+                          'sku' => "#{base['sku'].to_s[/\A[A-Z]+-\d+/] || 'OTX'}-#{sufijo_talla(talla)}", 'precio' => base['precio'],
+                          'opciones' => { 'Talla' => talla }, 'item' => "#{id}/i#{p['variantes'].size}", 'stock' => cantidad }
+      p['variantes'].sort_by!.with_index { |v, i| [ORDEN_TALLAS.index(v['titulo']) || 999, i] }
+      op = p['opciones'].find { |o| o['nombre'] == 'Talla' }
+      op['valores'] = p['variantes'].map { |v| v['titulo'] }.uniq if op
     end
     id
   end
@@ -453,6 +500,14 @@ servidor.mount_proc('/api/') do |req, res|
         p = BACKEND.producto(id)
         nombre = "#{p['handle'].to_s.empty? ? 'prenda' : p['handle']}-#{Time.now.to_i}.#{mime.split('/').last.sub('jpeg', 'jpg')}"
         BACKEND.subir_foto(id, nombre, mime, bytes, p['titulo'])
+        responder(res, 200, 'producto' => BACKEND.producto(id))
+      elsif req.request_method == 'POST' && ruta =~ %r{\A/productos/(.+)/tallas\z}
+        id = id_de_ruta(Regexp.last_match(1))
+        talla = datos['talla'].to_s.strip
+        raise ErrorPanel.new('Escribe la talla') if talla.empty? || talla.length > 12
+        cantidad = Integer(datos['cantidad'] || 0) rescue raise(ErrorPanel.new('Las unidades tienen que ser un número'))
+        raise ErrorPanel.new('Las unidades no pueden ser negativas') if cantidad.negative?
+        BACKEND.anadir_talla(id, talla, cantidad)
         responder(res, 200, 'producto' => BACKEND.producto(id))
       elsif req.request_method == 'POST' && ruta =~ %r{\A/productos/(.+)\z}
         id = id_de_ruta(Regexp.last_match(1))
