@@ -164,6 +164,7 @@ module Shopify
       'id' => p['id'], 'handle' => p['handle'], 'titulo' => p['title'], 'estado' => p['status'],
       'tipo' => p['productType'], 'marca' => p['vendor'], 'etiquetas' => p['tags'],
       'descripcion' => html_a_texto(p['descriptionHtml']), 'url' => p['onlineStoreUrl'],
+      'publicada' => !p['onlineStoreUrl'].nil?,   # activa Y publicada en la tienda online
       'fotos' => p['media']['nodes'].select { |m| m['image'] }.map { |m| { 'id' => m['id'], 'url' => m['image']['url'] } },
       'opciones' => p['options'].map { |o| { 'nombre' => o['name'], 'valores' => o['values'] } },
       'variantes' => p['variants']['nodes'].map do |v|
@@ -233,14 +234,15 @@ module Shopify
     cambios[:vendor] = datos['marca'] if datos.key?('marca')
     cambios[:descriptionHtml] = texto_a_html(datos['descripcion']) if datos.key?('descripcion')
     cambios[:status] = datos['estado'] if datos.key?('estado')
-    ok!(gql('mutation editar($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id } userErrors { field message } } }',
-            product: cambios)['productUpdate'])
+    estado = ok!(gql('mutation editar($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }',
+                     product: cambios)['productUpdate'])['product']['status']
     if datos.key?('precio')
       variantes = gql('query v($id: ID!) { product(id: $id) { variants(first: 100) { nodes { id } } } }', id: id)['product']['variants']['nodes']
       ok!(gql('mutation precio($productId: ID!, $variants: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $productId, variants: $variants) { productVariants { id } userErrors { field message } } }',
               productId: id, variants: variantes.map { |v| { id: v['id'], price: format('%.2f', datos['precio']) } })['productVariantsBulkUpdate'])
     end
-    if datos['estado'] == 'ACTIVE'
+    # Si la prenda está activa, cualquier cambio la deja publicada en la web y en el TPV
+    if estado == 'ACTIVE'
       publicar(id)
       preparar_para_web(id)
     end
