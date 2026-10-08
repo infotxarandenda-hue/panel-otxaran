@@ -65,6 +65,17 @@
   .estado a:hover{opacity:1;}
   .instalar{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;border:1px solid var(--ink);padding:7px 12px;background:none;cursor:pointer;}
   .instalar:hover{background:var(--ink);color:#fff;}
+  .avisos-tienda{margin:24px 0 0;border:1px solid var(--ink);padding:18px 20px;display:grid;gap:16px;background:#fffdf6;}
+  .avisos-tienda h2{margin:0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;}
+  .aviso-tienda{display:grid;gap:8px;padding-top:14px;border-top:1px solid var(--line);}
+  .aviso-tienda:first-of-type{border-top:0;padding-top:0;}
+  .aviso-tienda .que{font-size:15px;}
+  .aviso-tienda .cuando{font-size:12px;opacity:0.6;}
+  .aviso-tienda .tallas{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .aviso-tienda .tallas button{min-width:48px;min-height:44px;border:1px solid var(--ink);background:#fff;font:inherit;cursor:pointer;padding:0 12px;}
+  .aviso-tienda .tallas button:hover{background:var(--ink);color:#fff;}
+  .aviso-tienda .tallas button small{display:block;font-size:10px;opacity:0.6;}
+  .aviso-tienda .tallas .ignorar{border-color:var(--line);font-size:12px;}
   .add-talla-abrir{margin-top:14px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;text-decoration:underline;text-underline-offset:3px;background:none;border:0;padding:0;cursor:pointer;}
   .add-talla{margin-top:14px;padding:16px;border:1px solid var(--line);display:grid;gap:14px;}
   .add-talla-fila{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
@@ -277,6 +288,8 @@
 
 <main>
   <div id="loading" class="loading">Cargando prendas…</div>
+  <!-- ventas de la tienda (V3) que necesitan la talla -->
+  <section class="avisos-tienda" id="avisos-tienda" hidden></section>
 
   <!-- RESUMEN -->
   <section class="view" id="view-resumen">
@@ -379,6 +392,11 @@
       <div class="field" id="dr-tipo-campo"><label for="dr-tipo">Tipo</label><select id="dr-tipo"></select></div>
     </div>
     <div class="field"><label for="dr-marca">Marca</label><input type="text" id="dr-marca" autocomplete="off"></div>
+    <div class="field">
+      <label for="dr-v3">Código de la etiqueta de la tienda (V3)</label>
+      <input type="text" id="dr-v3" autocomplete="off" placeholder="p. ej. PG2603130">
+      <div class="hint">El número «Ref» de la etiqueta. Con él, cuando se venda en la tienda se restará solo en la web. Si tiene varios, sepáralos con comas.</div>
+    </div>
     <div class="field">
       <label for="dr-desc">Descripción</label>
       <textarea id="dr-desc"></textarea>
@@ -513,8 +531,40 @@
 
   function render() {
     if (!state.ctx) return;
+    renderAvisosTienda();
     ({ resumen: renderResumen, stock: renderStock, prendas: renderPrendas, ventas: renderVentas })[state.view]();
   }
+
+  // ---------- VENTAS DE LA TIENDA (V3) ----------
+  // Cuando en la tienda se vende una prenda con varias tallas, V3 no dice cuál: el panel lo pregunta aquí
+  function renderAvisosTienda() {
+    const avisos = state.productos.flatMap(p => (p.ventas_tienda || []).map(v => ({ p, v })))
+      .sort((a, b) => String(b.v.fecha).localeCompare(String(a.v.fecha)));
+    const caja = $("#avisos-tienda");
+    caja.hidden = !avisos.length;
+    if (!avisos.length) { caja.innerHTML = ""; return; }
+    const hora = f => { const d = new Date(f); return isNaN(d) ? "" : d.toLocaleString("es-ES", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+    caja.innerHTML = `<h2>Vendido en la tienda · ${avisos.length === 1 ? "falta 1 talla" : `faltan ${avisos.length} tallas`}</h2>` +
+      avisos.map(({ p, v }) => {
+        const dev = v.unidades < 0, uds = Math.abs(v.unidades);
+        return `<div class="aviso-tienda">
+          <div class="que">${dev ? "Devuelto" : "Vendido"} en tienda: <b>${esc(p.titulo)}</b>${uds > 1 ? ` (${uds} uds.)` : ""} — ¿qué talla${dev ? " vuelve" : ""}?</div>
+          <div class="cuando">${esc(hora(v.fecha))} · Ref. ${esc(v.referencia || "")}</div>
+          <div class="tallas">${p.variantes.map(t => `<button type="button" data-resolver="${esc(p.id)}|${v.id}|${esc(t.item)}">${esc(t.titulo)}<small>quedan ${t.stock}</small></button>`).join("")}
+            <button type="button" class="ignorar" data-resolver="${esc(p.id)}|${v.id}|">No era de la web</button></div>
+        </div>`;
+      }).join("");
+  }
+  $("#avisos-tienda").addEventListener("click", async e => {
+    const b = e.target.closest("[data-resolver]"); if (!b) return;
+    const [producto, venta, item] = b.dataset.resolver.split("|");
+    $$("#avisos-tienda button").forEach(x => x.disabled = true);
+    try {
+      const prod = (await api("/tienda/resolver", { method: "POST", body: { producto, venta, item } })).producto;
+      reemplazar(prod); render();
+      toast(item ? (state.modo === "demo" ? "Restado en el panel (modo demo)." : "Hecho: restado en el dashboard y en la web.") : "Aviso quitado. No se ha restado nada.");
+    } catch (err) { toast(err.message, true); render(); }
+  });
 
   // ---------- RESUMEN ----------
   function renderResumen() {
@@ -707,6 +757,7 @@
     $("#dr-nombre").value = p ? p.titulo : "";
     $("#dr-precio").value = p ? String(precioDe(p)).replace(".", ",") : "";
     $("#dr-marca").value = p ? p.marca : "Otxaran";
+    $("#dr-v3").value = p ? (p.codigo_v3 || "") : "";
     $("#dr-desc").value = p ? p.descripcion : "";
     setEstadoDrawer(state.drawer.estado);
     clearTimeout(autoTimer); autoPendiente = false;
@@ -920,6 +971,8 @@
     if (precio > 0 && precio !== precioDe(p)) c.precio = datos.precio;
     if (datos.tipo !== p.tipo) c.tipo = datos.tipo;
     if (datos.marca !== p.marca) c.marca = datos.marca;
+    const v3 = $("#dr-v3").value.trim().toUpperCase();
+    if (v3 !== (p.codigo_v3 || "").toUpperCase()) c.codigo_v3 = v3;
     if (datos.descripcion.trim() !== p.descripcion.trim()) c.descripcion = datos.descripcion;
     return c;
   }
@@ -943,7 +996,7 @@
     autoTimer = setTimeout(tarea, 900);
     return autoCola;
   }
-  ["#dr-nombre", "#dr-precio", "#dr-marca", "#dr-desc"].forEach(s => {
+  ["#dr-nombre", "#dr-precio", "#dr-marca", "#dr-desc", "#dr-v3"].forEach(s => {
     $(s).addEventListener("input", () => autoguardar());
     $(s).addEventListener("blur", () => { if (autoPendiente) autoguardar(true); });
   });
@@ -982,6 +1035,8 @@
       }
       reemplazar(prod);
       d.id = prod.id;
+      const v3nuevo = $("#dr-v3").value.trim();
+      if (!p && v3nuevo) prod = (await api("/productos/" + encodeURIComponent(prod.id), { method: "POST", body: { codigo_v3: v3nuevo } })).producto;
       // fotos nuevas, una a una (en una prenda que ya existe se suben solas al elegirlas)
       while (d.subiendo) await new Promise(r => setTimeout(r, 300));
       const total = state.pendientes.length;
@@ -1057,6 +1112,7 @@
       try { vista = localStorage.getItem("otx-panel-vista") || vista; } catch (_) {}
       irA(["resumen", "stock", "prendas", "ventas"].includes(vista) ? vista : "resumen");
       if (state.ventas === null) cargarVentas();
+      setInterval(() => { if (!document.hidden && !state.drawer && $("#stock-modal").hidden) cargarProductos().catch(() => {}); }, 60000);
     } catch (e) {
       $("#loading").textContent = e.message;
       const c = $("#conexion"); c.lastElementChild.textContent = "Sin conexión";
