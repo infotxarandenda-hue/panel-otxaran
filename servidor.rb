@@ -148,9 +148,11 @@ module Shopify
       products(first: 50, after: $after, sortKey: CREATED_AT, reverse: true) {
         pageInfo { hasNextPage endCursor }
         nodes { id handle title status productType vendor tags descriptionHtml totalInventory onlineStoreUrl
+          v3: metafield(namespace: "custom", key: "codigo_v3") { value }
+          tienda: metafield(namespace: "custom", key: "ventas_tienda") { value }
           media(first: 50) { nodes { id alt ... on MediaImage { image { url(transform: {maxWidth: 900}) } } } }
           options { name values }
-          variants(first: 100) { nodes { id title sku price selectedOptions { name value }
+          variants(first: 100) { nodes { id title sku barcode price selectedOptions { name value }
             inventoryItem { id inventoryLevel(locationId: $loc) { quantities(names: ["available"]) { name quantity } } } } } } } }
   Q
 
@@ -177,12 +179,14 @@ module Shopify
       'tipo' => p['productType'], 'marca' => p['vendor'], 'etiquetas' => p['tags'],
       'descripcion' => html_a_texto(p['descriptionHtml']), 'url' => p['onlineStoreUrl'],
       'publicada' => !p['onlineStoreUrl'].nil?,   # activa Y publicada en la tienda online
+      'codigo_v3' => p['v3'] ? p['v3']['value'] : '',
+      'ventas_tienda' => (JSON.parse(p['tienda']['value']) rescue []),   # ventas de V3 pendientes de decir la talla
       'fotos' => p['media']['nodes'].select { |m| m['image'] }.map { |m| { 'id' => m['id'], 'url' => m['image']['url'], 'alt' => m['alt'].to_s } },
       'opciones' => p['options'].map { |o| { 'nombre' => o['name'], 'valores' => o['values'] } },
       'variantes' => p['variants']['nodes'].map do |v|
         lvl = v['inventoryItem']['inventoryLevel']
         {
-          'id' => v['id'], 'titulo' => v['title'], 'sku' => v['sku'], 'precio' => v['price'].to_f,
+          'id' => v['id'], 'titulo' => v['title'], 'sku' => v['sku'], 'codbarras' => v['barcode'].to_s, 'precio' => v['price'].to_f,
           'opciones' => v['selectedOptions'].map { |o| [o['name'], o['value']] }.to_h,
           'item' => v['inventoryItem']['id'],
           'stock' => lvl ? lvl['quantities'].first['quantity'] : 0
@@ -257,6 +261,7 @@ module Shopify
     cambios[:vendor] = datos['marca'] if datos.key?('marca')
     cambios[:descriptionHtml] = texto_a_html(datos['descripcion']) if datos.key?('descripcion')
     cambios[:status] = datos['estado'] if datos.key?('estado')
+    poner_codigo_v3(id, datos['codigo_v3']) if datos.key?('codigo_v3')
     estado = ok!(gql('mutation editar($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }',
                      product: cambios)['productUpdate'])['product']['status']
     if datos.key?('precio')
@@ -343,6 +348,70 @@ module Shopify
             productId: id, variantMedia: sin_foto.map { |v| { variantId: v['id'], mediaIds: [media_id] } })['productVariantAppendMedia'])
   end
 
+  def self.metacampo(id, clave, tipo, valor)
+    if valor.to_s.empty?
+      ok!(gql('mutation d($metafields: [MetafieldIdentifierInput!]!) { metafieldsDelete(metafields: $metafields) { userErrors { field message } } }',
+              metafields: [{ ownerId: id, namespace: 'custom', key: clave }])['metafieldsDelete'])
+    else
+      ok!(gql('mutation m($metafields: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $metafields) { userErrors { field message } } }',
+              metafields: [{ ownerId: id, namespace: 'custom', key: clave, type: tipo, value: valor }])['metafieldsSet'])
+    end
+  end
+
+  def self.poner_codigo_v3(id, codigo)
+    metacampo(id, 'codigo_v3', 'single_line_text_field', codigo)
+  end
+
+  # Resta (o suma, en una devolución) unidades de una talla. La clave «v3-<id>» hace que Shopify
+  # no la aplique dos veces aunque el vigilante la mande repetida.
+  def self.ajustar_tienda(item, delta, clave)
+    r = gql('mutation a($input: InventoryAdjustQuantitiesInput!, $clave: String!) { inventoryAdjustQuantities(input: $input) @idempotent(key: $clave) { inventoryAdjustmentGroup { id } userErrors { field message code } } }',
+            input: { name: 'available', reason: 'correction', referenceDocumentUri: "gid://otxaran-v3/Venta/#{clave}",
+                     changes: [{ inventoryItemId: item, locationId: contexto['ubicacion']['id'], delta: delta, changeFromQuantity: nil }] },
+            clave: clave)['inventoryAdjustQuantities']
+    ok!(r)
+  end
+
+  def self.guardar_pendientes(id, lista)
+    metacampo(id, 'ventas_tienda', 'json', lista.empty? ? '' : JSON.generate(lista))
+  end
+
+  def self.registrar_ventas_tienda(movimientos)
+    return resumen_tienda([]) if movimientos.empty?
+    prods = productos
+    resultados = movimientos.map do |m|
+      p, exacta = talla_de_codigo(prods, m['referencia'])
+      p ||= prenda_de_codigo(prods, m['referencia'])
+      next { 'id' => m['id'], 'resultado' => 'sin_enlace' } unless p
+      decision = exacta ? { item: exacta['item'] } : decidir_venta_tienda(p, m['unidades'])
+      if decision[:item]
+        ajustar_tienda(decision[:item], -m['unidades'], "v3-#{m['id']}")
+        v = p['variantes'].find { |x| x['item'] == decision[:item] }
+        v['stock'] -= m['unidades'] if v
+        { 'id' => m['id'], 'resultado' => 'restada', 'prenda' => p['titulo'], 'talla' => v && v['titulo'] }
+      else
+        unless p['ventas_tienda'].any? { |x| x['id'] == m['id'] }
+          p['ventas_tienda'] << m.slice('id', 'referencia', 'unidades', 'fecha', 'descripcion')
+          guardar_pendientes(p['id'], p['ventas_tienda'])
+        end
+        { 'id' => m['id'], 'resultado' => 'pendiente', 'prenda' => p['titulo'] }
+      end
+    end
+    resumen_tienda(resultados)
+  end
+
+  # El panel dice la talla de una venta pendiente (o la descarta con item = nil)
+  def self.resolver_venta_tienda(id, venta_id, item)
+    p = producto(id)
+    venta = p['ventas_tienda'].find { |x| x['id'] == venta_id } or raise ErrorPanel.new('Ese aviso ya estaba resuelto', 404)
+    if item
+      p['variantes'].any? { |v| v['item'] == item } or raise ErrorPanel.new('Esa talla no es de esta prenda')
+      ajustar_tienda(item, -venta['unidades'].to_i, "v3-#{venta_id}")
+    end
+    guardar_pendientes(id, p['ventas_tienda'].reject { |x| x['id'] == venta_id })
+    id
+  end
+
   def self.ventas
     desde = (Time.now - 60 * 86_400).strftime('%Y-%m-%d')
     d = gql(<<~Q, q: "created_at:>=#{desde}")
@@ -414,7 +483,7 @@ module Demo
   def self.editar(id, datos)
     @mutex.synchronize do
       p = producto(id)
-      { 'titulo' => 'titulo', 'tipo' => 'tipo', 'marca' => 'marca', 'descripcion' => 'descripcion', 'estado' => 'estado' }.each do |k, campo|
+      { 'titulo' => 'titulo', 'tipo' => 'tipo', 'marca' => 'marca', 'descripcion' => 'descripcion', 'estado' => 'estado', 'codigo_v3' => 'codigo_v3' }.each do |k, campo|
         p[campo] = datos[k] if datos.key?(k)
       end
       p['variantes'].each { |v| v['precio'] = datos['precio'].to_f } if datos.key?('precio')
@@ -449,6 +518,97 @@ module Demo
   def self.ventas
     []
   end
+
+  def self.registrar_ventas_tienda(movimientos)
+    resultados = @mutex.synchronize do
+      movimientos.map do |m|
+        p, exacta = talla_de_codigo(@productos, m['referencia'])
+        p ||= prenda_de_codigo(@productos, m['referencia'])
+        next { 'id' => m['id'], 'resultado' => 'sin_enlace' } unless p
+        p['ventas_tienda'] ||= []
+        decision = exacta ? { item: exacta['item'] } : decidir_venta_tienda(p, m['unidades'])
+        if decision[:item]
+          v = p['variantes'].find { |x| x['item'] == decision[:item] }
+          v['stock'] -= m['unidades']
+          { 'id' => m['id'], 'resultado' => 'restada', 'prenda' => p['titulo'], 'talla' => v['titulo'] }
+        else
+          p['ventas_tienda'] << m.slice('id', 'referencia', 'unidades', 'fecha', 'descripcion') unless p['ventas_tienda'].any? { |x| x['id'] == m['id'] }
+          { 'id' => m['id'], 'resultado' => 'pendiente', 'prenda' => p['titulo'] }
+        end
+      end
+    end
+    resumen_tienda(resultados)
+  end
+
+  def self.resolver_venta_tienda(id, venta_id, item)
+    @mutex.synchronize do
+      p = producto(id)
+      lista = p['ventas_tienda'] || []
+      venta = lista.find { |x| x['id'] == venta_id } or raise ErrorPanel.new('Ese aviso ya estaba resuelto', 404)
+      if item
+        v = p['variantes'].find { |x| x['item'] == item } or raise ErrorPanel.new('Esa talla no es de esta prenda')
+        v['stock'] -= venta['unidades'].to_i
+      end
+      p['ventas_tienda'] = lista.reject { |x| x['id'] == venta_id }
+    end
+    id
+  end
+end
+
+# ---------- ventas de la tienda física (V3) ----------
+# Una prenda puede tener uno o varios códigos de V3 (separados por comas: «PG2603130, 2000000003436»)
+def codigos_v3(p)
+  p['codigo_v3'].to_s.upcase.split(/[,;\s]+/).reject(&:empty?)
+end
+
+# Etiqueta por talla: si el código de la venta es el de una talla concreta (su referencia o su código de barras
+# en la web), se sabe la talla exacta y se resta sola
+def talla_de_codigo(prods, referencia)
+  ref = referencia.to_s.strip.upcase
+  return nil if ref.empty? || ref == 'C'
+  prods.each do |p|
+    v = p['variantes'].find { |x| x['sku'].to_s.upcase == ref || x['codbarras'].to_s.upcase == ref }
+    return [p, v] if v
+  end
+  nil
+end
+
+def prenda_de_codigo(prods, referencia)
+  ref = referencia.to_s.strip.upcase
+  return nil if ref.empty? || ref == 'C'
+  prods.find { |p| codigos_v3(p).include?(ref) }
+end
+
+# Venta (unidades > 0): si solo una talla tiene stock suficiente, se resta sola; si no, hay que preguntar.
+# Devolución (unidades < 0): solo es automática si la prenda tiene una única talla.
+def decidir_venta_tienda(p, unidades)
+  vs = p['variantes']
+  if unidades.positive?
+    con_stock = vs.select { |v| v['stock'].to_i.positive? }
+    return { item: con_stock.first['item'] } if con_stock.size == 1 && con_stock.first['stock'] >= unidades
+  elsif vs.size == 1
+    return { item: vs.first['item'] }
+  end
+  { pendiente: true }
+end
+
+def resumen_tienda(resultados)
+  { 'resultados' => resultados,
+    'restadas' => resultados.count { |r| r['resultado'] == 'restada' },
+    'pendientes' => resultados.count { |r| r['resultado'] == 'pendiente' },
+    'sin_enlace' => resultados.count { |r| r['resultado'] == 'sin_enlace' } }
+end
+
+def validar_movimientos!(d)
+  lista = d['movimientos']
+  raise ErrorPanel.new('Faltan los movimientos') unless lista.is_a?(Array)
+  raise ErrorPanel.new('Demasiados movimientos de una vez (máx. 500)') if lista.size > 500
+  lista.map do |m|
+    id = Integer(m['id']) rescue raise(ErrorPanel.new('Movimiento sin número'))
+    uds = (Float(m['unidades']) rescue 0).round
+    { 'id' => id, 'referencia' => m['referencia'].to_s.strip[0, 40], 'unidades' => uds,
+      'fecha' => m['fecha'].to_s[0, 40], 'descripcion' => m['descripcion'].to_s.strip[0, 80] }
+  end.reject { |m| m['unidades'].zero? }
 end
 
 BACKEND = MODO == 'shopify' ? Shopify : Demo
@@ -470,6 +630,10 @@ def validar_producto!(d, nuevo)
     d['precio'] = precio
   end
   raise ErrorPanel.new('Tipo de prenda no válido') if (nuevo || d.key?('tipo')) && !TIPOS.include?(d['tipo'])
+  if d.key?('codigo_v3')
+    d['codigo_v3'] = d['codigo_v3'].to_s.upcase.split(/[,;\s]+/).reject(&:empty?).uniq.join(', ')
+    raise ErrorPanel.new('El código de V3 es demasiado largo') if d['codigo_v3'].length > 120
+  end
   raise ErrorPanel.new('Estado no válido') if (nuevo || d.key?('estado')) && !%w[ACTIVE DRAFT ARCHIVED].include?(d['estado'])
   if nuevo
     d['tallas'] = Array(d['tallas']).map(&:to_s).map(&:strip).reject(&:empty?).uniq
@@ -535,6 +699,13 @@ servidor.mount_proc('/api/') do |req, res|
       responder(res, 200, BACKEND.poner_stock(datos['item'].to_s, cantidad, datos['anterior'] && datos['anterior'].to_i))
     when ['POST', '/productos']
       id = BACKEND.crear(validar_producto!(datos, true))
+      responder(res, 200, 'producto' => BACKEND.producto(id))
+    when ['POST', '/tienda/ventas']   # lo llama el vigilante del ordenador de la tienda
+      responder(res, 200, BACKEND.registrar_ventas_tienda(validar_movimientos!(datos)))
+    when ['POST', '/tienda/resolver'] # el panel dice la talla de una venta pendiente
+      venta = Integer(datos['venta']) rescue raise(ErrorPanel.new('Falta la venta'))
+      id = datos['producto'].to_s.sub(%r{\Agid:/+}, 'gid://')
+      BACKEND.resolver_venta_tienda(id, venta, datos['item'].to_s.empty? ? nil : datos['item'].to_s)
       responder(res, 200, 'producto' => BACKEND.producto(id))
     when ['GET', '/ventas']
       responder(res, 200, 'ventas' => BACKEND.ventas)
